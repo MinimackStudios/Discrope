@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String           @id @default(cuid())
+  username          String           @unique
+  nickname          String           @default("")
+  isDeleted         Boolean          @default(false)
+  passwordHash      String
+  avatarUrl         String?
+  aboutMe           String           @default("")
+  customStatus      String           @default("")
+  status            String           @default("ONLINE")
+  createdAt         DateTime         @default(now())
+  ownedServers      Server[]
+  serverMemberships ServerMember[]
+  messages          Message[]
+  dmMessages        DMMessage[]
+  reactions         MessageReaction[]
+  outgoingRequests  FriendRequest[]  @relation("OutgoingRequests")
+  incomingRequests  FriendRequest[]  @relation("IncomingRequests")
+  dmChannels        DMChannel[]      @relation("DMParticipants")
+  serverBans        ServerBan[]
+}
+
+model Server {
+  id          String           @id @default(cuid())
+  name        String
+  iconUrl     String?
+  ownerId     String
+  inviteCode  String           @unique
+  owner       User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members     ServerMember[]
+  bans        ServerBan[]
+  categories  ChannelCategory[]
+  channels    Channel[]
+  createdAt   DateTime         @default(now())
+}
+
+model ServerBan {
+  userId    String
+  serverId  String
+  reason    String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@id([userId, serverId])
+}
+
+model ServerMember {
+  userId    String
+  serverId  String
+  nickname  String?
+  role      String     @default("MEMBER")
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server    Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+
+  @@id([userId, serverId])
+}
+
+model ChannelCategory {
+  id        String    @id @default(cuid())
+  name      String
+  order     Int       @default(0)
+  serverId  String
+  server    Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  channels  Channel[]
+}
+
+model Channel {
+  id          String       @id @default(cuid())
+  name        String
+  type        String
+  categoryId  String?
+  serverId    String
+  category    ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  server      Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  createdAt   DateTime     @default(now())
+}
+
+model Message {
+  id         String            @id @default(cuid())
+  content    String
+  attachmentUrl String?
+  attachmentName String?
+  authorId   String
+  channelId  String
+  replyToId  String?
+  editedAt   DateTime?
+  isPinned   Boolean           @default(false)
+  createdAt  DateTime          @default(now())
+  author     User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  channel    Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  replyTo    Message?          @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies    Message[]         @relation("MessageReplies")
+  reactions  MessageReaction[]
+}
+
+model DMMessage {
+  id             String   @id @default(cuid())
+  content        String
+  attachmentUrl  String?
+  attachmentName String?
+  authorId       String
+  dmChannelId    String
+  editedAt       DateTime?
+  createdAt      DateTime @default(now())
+  author         User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  dmChannel      DMChannel @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+}
+
+model MessageReaction {
+  messageId  String
+  userId     String
+  emoji      String
+  message    Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId, emoji])
+}
+
+model FriendRequest {
+  id        String              @id @default(cuid())
+  fromId    String
+  toId      String
+  status    String              @default("PENDING")
+  createdAt DateTime            @default(now())
+  from      User                @relation("OutgoingRequests", fields: [fromId], references: [id], onDelete: Cascade)
+  to        User                @relation("IncomingRequests", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId])
+}
+
+model DMChannel {
+  id           String   @id @default(cuid())
+  participants User[]   @relation("DMParticipants")
+  messages     DMMessage[]
+  createdAt    DateTime @default(now())
+}

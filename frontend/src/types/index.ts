@@ -1,0 +1,90 @@
+export type UserStatus = "ONLINE" | "IDLE" | "DND" | "INVISIBLE" | "OFFLINE";
+
+export type User = {
+  id: string;
+  username: string;
+  nickname: string;
+  isDeleted?: boolean;
+  avatarUrl?: string | null;
+  status: UserStatus;
+  aboutMe?: string;
+  customStatus?: string;
+};
+
+export type ChannelType = "TEXT" | "VOICE";
+
+export type ChannelCategory = {
+  id: string;
+  name: string;
+  order: number;
+  serverId: string;
+};
+
+export type Channel = {
+  id: string;
+  name: string;
+  type: ChannelType;
+  categoryId?: string | null;
+  serverId: string;
+};
+
+export type MessageReaction = {
+  messageId: string;
+  userId: string;
+  emoji: string;
+};
+
+export type Message = {
+  id: string;
+  content: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  channelId: string;
+  authorId: string;
+  editedAt?: string | null;
+  createdAt: string;
+  isPinned?: boolean;
+  replyTo?: {
+    id: string;
+    content: string;
+    author: { id: string; username: string; nickname?: string; isDeleted?: boolean; avatarUrl?: string | null };
+  } | null;
+  author: User;
+  reactions: MessageReaction[];
+};
+
+export type ServerMember = {
+  userId: string;
+  serverId: string;
+  nickname?: string | null;
+  role: "MEMBER" | "ADMIN";
+  user: User;
+};
+
+export type Server = {
+  id: string;
+  name: string;
+  iconUrl?: string | null;
+  ownerId: string;
+  inviteCode: string;
+  categories: ChannelCategory[];
+  channels: Channel[];
+  members: ServerMember[];
+};
+
+export type DMChannel = {
+  id: string;
+  participants: User[];
+};
+
+export type DMMessage = {
+  id: string;
+  content: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  dmChannelId: string;
+  authorId: string;
+  editedAt?: string | null;
+  createdAt: string;
+  author: User;
+};

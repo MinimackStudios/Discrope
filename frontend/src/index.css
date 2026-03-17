@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: "gg sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background: #1e1f22;
+  color: #dbdee1;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.discord-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.discord-scrollbar::-webkit-scrollbar-thumb {
+  background: #1a1b1e;
+  border-radius: 8px;
+}
+
+.discord-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-markdown p {
+  margin: 0;
+}
+
+.mention {
+  background: rgba(88, 101, 242, 0.22);
+  color: #c9cdfb;
+  padding: 0 4px;
+  border-radius: 4px;
+}

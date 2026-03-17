@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Discrope system avatar">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4f73ff" />
+      <stop offset="100%" stop-color="#2e46b5" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="128" height="128" rx="64" fill="url(#bg)"/>
+  <circle cx="64" cy="52" r="24" fill="#e8eeff"/>
+  <path d="M28 106c4-18 18-30 36-30s32 12 36 30" fill="#e8eeff"/>
+  <path d="M20 26h88v12H20z" fill="#d4ddff" opacity="0.75"/>
+</svg>

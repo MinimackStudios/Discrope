@@ -1,0 +1,202 @@
+import { FormEvent, useEffect, useState } from "react";
+import { api } from "../lib/api";
+import { useAuthStore } from "../lib/stores/authStore";
+import type { UserStatus } from "../types";
+import AvatarCropModal from "./AvatarCropModal";
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+};
+
+const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+  const logout = useAuthStore((s) => s.logout);
+
+  const [username, setUsername] = useState(user?.username ?? "");
+  const [nickname, setNickname] = useState(user?.nickname ?? "");
+  const [status, setStatus] = useState<UserStatus>((user?.status as UserStatus) ?? "ONLINE");
+  const [aboutMe, setAboutMe] = useState(user?.aboutMe ?? "");
+  const [customStatus, setCustomStatus] = useState(user?.customStatus ?? "");
+  const [avatar, setAvatar] = useState<File | null>(null);
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
+  const [avatarEditorSrc, setAvatarEditorSrc] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setUsername(user?.username ?? "");
+    setNickname(user?.nickname ?? "");
+    setStatus((user?.status as UserStatus) ?? "ONLINE");
+    setAboutMe(user?.aboutMe ?? "");
+    setCustomStatus(user?.customStatus ?? "");
+  }, [user?.id, user?.username, user?.nickname, user?.status, user?.aboutMe, user?.customStatus]);
+
+  useEffect(() => {
+    if (open) {
+      setSaved(false);
+    }
+  }, [open]);
+
+  if (!open || !user) {
+    return null;
+  }
+
+  const onSubmit = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    setSaved(false);
+    const formData = new FormData();
+    formData.append("username", username);
+    formData.append("nickname", nickname);
+    formData.append("status", status);
+    formData.append("aboutMe", aboutMe);
+    formData.append("customStatus", customStatus);
+    if (avatar) {
+      formData.append("avatar", avatar);
+    }
+
+    const { data } = await api.patch("/users/me", formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    });
+    setUser(data.user);
+    if (avatarEditorSrc) {
+      URL.revokeObjectURL(avatarEditorSrc);
+      setAvatarEditorSrc(null);
+    }
+    setAvatar(null);
+    setSaved(true);
+  };
+
+  const onAvatarPicked = (file: File | null): void => {
+    if (!file) {
+      return;
+    }
+    if (avatarEditorSrc) {
+      URL.revokeObjectURL(avatarEditorSrc);
+    }
+    const src = URL.createObjectURL(file);
+    setAvatarEditorSrc(src);
+    setAvatarEditorOpen(true);
+  };
+
+  const onDeleteAccount = async (): Promise<void> => {
+    try {
+      setDeleting(true);
+      await api.delete("/users/me");
+      await logout();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
+      <form onSubmit={onSubmit} className="w-full max-w-md rounded-lg bg-[#2b2d31] p-4" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-semibold">User Settings</h2>
+        <label className="mt-3 block text-xs text-discord-muted">
+          Username
+          <input
+            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            pattern="[A-Za-z0-9]{2,32}"
+            maxLength={32}
+          />
+          <span className="mt-1 block text-[11px]">Letters and numbers only, no spaces.</span>
+        </label>
+        <label className="mt-3 block text-xs text-discord-muted">
+          Nickname
+          <input
+            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            maxLength={32}
+          />
+        </label>
+        <label className="mt-3 block text-xs text-discord-muted">
+          Status
+          <select
+            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as UserStatus)}
+          >
+            <option value="ONLINE">Online</option>
+            <option value="IDLE">Idle</option>
+            <option value="DND">Do Not Disturb</option>
+            <option value="INVISIBLE">Invisible</option>
+          </select>
+        </label>
+        <label className="mt-3 block text-xs text-discord-muted">
+          Custom Status
+          <input
+            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+            value={customStatus}
+            onChange={(e) => setCustomStatus(e.target.value)}
+            placeholder="What are you up to?"
+          />
+        </label>
+        <label className="mt-3 block text-xs text-discord-muted">
+          About Me
+          <textarea
+            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+            rows={3}
+            value={aboutMe}
+            onChange={(e) => setAboutMe(e.target.value)}
+            placeholder="Tell people about yourself"
+          />
+        </label>
+        <label className="mt-3 block text-xs text-discord-muted">
+          Avatar
+          <input className="mt-1 w-full text-sm" type="file" accept="image/*" onChange={(e) => onAvatarPicked(e.target.files?.[0] ?? null)} />
+          {avatar ? <span className="mt-1 block text-[11px]">Edited image ready to upload.</span> : null}
+        </label>
+
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <div>
+            {!confirmDelete ? (
+              <button
+                type="button"
+                className="rounded bg-[#ed4245] px-3 py-1 text-sm font-semibold text-white hover:bg-[#c0383b]"
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete Account
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#ffb3b8]">This is permanent.</span>
+                <button
+                  type="button"
+                  className="rounded bg-[#ed4245] px-3 py-1 text-sm font-semibold text-white hover:bg-[#c0383b] disabled:opacity-60"
+                  onClick={() => void onDeleteAccount()}
+                  disabled={deleting}
+                >
+                  {deleting ? "Deleting..." : "Confirm Delete"}
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {saved ? <span className="text-xs text-[#23a55a]">Saved</span> : null}
+            <button type="button" className="rounded px-3 py-1 text-sm text-discord-muted hover:text-white" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="rounded bg-discord-blurple px-3 py-1 text-sm font-semibold text-white">
+              Save
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <AvatarCropModal
+        open={avatarEditorOpen}
+        imageSrc={avatarEditorSrc}
+        onClose={() => setAvatarEditorOpen(false)}
+        onApply={(file) => setAvatar(file)}
+      />
+    </div>
+  );
+};
+
+export default SettingsModal;
