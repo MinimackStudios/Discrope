@@ -8,10 +8,32 @@ type VoiceState = {
   deafened: boolean;
 };
 
+const normalizeOrigin = (value: string): string => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value.replace(/\/$/, "");
+  }
+};
+
 export const initSocket = (server: HttpServer): Server => {
+  const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map(normalizeOrigin);
+
   const io = new Server(server, {
     cors: {
-      origin: process.env.FRONTEND_ORIGIN,
+      origin: (origin, callback) => {
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+
+        const requestOrigin = normalizeOrigin(origin);
+        callback(null, allowedOrigins.includes(requestOrigin));
+      },
       credentials: true
     }
   });

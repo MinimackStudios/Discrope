@@ -19,9 +19,33 @@ const sockets_1 = require("./sockets");
 const app = (0, express_1.default)();
 const server = node_http_1.default.createServer(app);
 const io = (0, sockets_1.initSocket)(server);
+const normalizeOrigin = (value) => {
+    try {
+        return new URL(value).origin;
+    }
+    catch {
+        return value.replace(/\/$/, "");
+    }
+};
+const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map(normalizeOrigin);
 app.set("io", io);
 app.use((0, cors_1.default)({
-    origin: process.env.FRONTEND_ORIGIN,
+    origin: (origin, callback) => {
+        if (!origin) {
+            callback(null, true);
+            return;
+        }
+        const requestOrigin = normalizeOrigin(origin);
+        if (allowedOrigins.includes(requestOrigin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error(`Origin not allowed by CORS: ${origin}`));
+    },
     credentials: true
 }));
 app.use((0, helmet_1.default)());

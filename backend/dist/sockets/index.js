@@ -7,10 +7,30 @@ exports.initSocket = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const socket_io_1 = require("socket.io");
 const prisma_1 = require("../lib/prisma");
+const normalizeOrigin = (value) => {
+    try {
+        return new URL(value).origin;
+    }
+    catch {
+        return value.replace(/\/$/, "");
+    }
+};
 const initSocket = (server) => {
+    const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map(normalizeOrigin);
     const io = new socket_io_1.Server(server, {
         cors: {
-            origin: process.env.FRONTEND_ORIGIN,
+            origin: (origin, callback) => {
+                if (!origin) {
+                    callback(null, true);
+                    return;
+                }
+                const requestOrigin = normalizeOrigin(origin);
+                callback(null, allowedOrigins.includes(requestOrigin));
+            },
             credentials: true
         }
     });
