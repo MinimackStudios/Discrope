@@ -49,7 +49,9 @@ app.use((0, cors_1.default)({
     },
     credentials: true
 }));
-app.use((0, helmet_1.default)());
+app.use((0, helmet_1.default)({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 app.use(express_1.default.json({ limit: "2mb" }));
 app.use((0, cookie_parser_1.default)());
 app.use("/uploads", express_1.default.static(node_path_1.default.resolve(process.cwd(), "uploads")));
