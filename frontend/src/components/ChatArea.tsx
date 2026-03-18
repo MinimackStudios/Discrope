@@ -1,13 +1,15 @@
-﻿import { type ChangeEvent, type MouseEvent, type ReactNode, FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿import { Children, cloneElement, type ChangeEvent, Fragment, isValidElement, type MouseEvent, type ReactNode, FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import remarkGfm from "remark-gfm";
 import ReactMarkdown from "react-markdown";
-import EmojiPicker, { Theme } from "emoji-picker-react";
+import { emojiByUnified } from "emoji-picker-react";
+import emojiData from "emoji-picker-react/dist/data/emojis.js";
 import { motion, AnimatePresence } from "framer-motion";
 import { Download, Edit3, FileAudio2, Paperclip, Pause, Play, Reply, Smile, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useChatStore } from "../lib/stores/chatStore";
 import { api } from "../lib/api";
 import { resolveMediaUrl } from "../lib/media";
 import { getSocket } from "../lib/socket";
+import DiscordEmojiPicker from "./DiscordEmojiPicker";
 import OpenGraphEmbed from "./OpenGraphEmbed";
 import StatusDot from "./StatusDot";
 import type { DMMessage, Message, ServerMember, User } from "../types";
@@ -91,6 +93,38 @@ const MARKDOWN_SYNTAX_REGEX = /[`*_~\[\]()>#]|(?:^|\s)-\s|https?:\/\//;
 const VIRTUALIZATION_THRESHOLD = 80;
 const DEFAULT_MESSAGE_ROW_HEIGHT = 84;
 const VIRTUALIZATION_OVERSCAN_PX = 800;
+const EMOJI_REGEX = /(?:[\u{1F1E6}-\u{1F1FF}]{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)/gu;
+const TWITTER_EMOJI_BASE_URL = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/";
+const EMOJI_AUTOCOMPLETE_LIMIT = 8;
+
+const REACTION_PICKER_HEIGHT = 404;
+const REACTION_PICKER_MARGIN = 12;
+
+type EmojiSuggestion = {
+  name: string;
+  emoji: string;
+  unified: string;
+};
+
+type ReactionPickerState = {
+  messageId: string;
+  placement: "above" | "below";
+};
+
+type ReactionSummary = {
+  count: number;
+  reacted: boolean;
+  users: string[];
+};
+
+type EmojiDatasetEntry = {
+  n?: string[];
+  u: string;
+};
+
+const AUTOCOMPLETE_EMOJIS: EmojiDatasetEntry[] = Object.values(emojiData.emojis)
+  .flatMap((entries) => entries as EmojiDatasetEntry[])
+  .filter((entry) => Boolean(entry.u));
 
 type InvitePreview = {
   code: string;
@@ -155,6 +189,140 @@ const persistDrafts = (drafts: Record<string, string>): void => {
     return;
   }
   window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
+};
+
+const toEmojiUnified = (emoji: string): string => {
+  return Array.from(emoji)
+    .map((char) => char.codePointAt(0)?.toString(16) ?? "")
+    .filter(Boolean)
+    .join("-")
+    .replace(/(^|-)fe0e(?=-|$)/g, "$1")
+    .replace(/--+/g, "-")
+    .replace(/^-|-$/g, "");
+};
+
+const emojiImageUrl = (emoji: string): string | null => {
+  const unified = toEmojiUnified(emoji);
+  if (!unified || !emojiByUnified(unified)) {
+    return null;
+  }
+  return `${TWITTER_EMOJI_BASE_URL}${unified}.svg`;
+};
+
+const unifiedToEmoji = (unified: string): string => {
+  return unified
+    .split("-")
+    .map((codePoint) => Number.parseInt(codePoint, 16))
+    .filter((codePoint) => Number.isFinite(codePoint))
+    .map((codePoint) => String.fromCodePoint(codePoint))
+    .join("");
+};
+
+const emojiOnlySegments = (text: string): string[] => {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (!parts.length || parts.length > 12) {
+    return [];
+  }
+
+  return parts.every((part) => {
+    const matches = [...part.matchAll(EMOJI_REGEX)].map((match) => match[0]);
+    return matches.length > 0 && matches.join("") === part && matches.every((emoji) => Boolean(emojiImageUrl(emoji)));
+  })
+    ? parts
+    : [];
+};
+
+const renderEmojiText = (text: string, keyPrefix: string, sizeClassName = "h-[1.3em] w-[1.3em]"): ReactNode[] => {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(EMOJI_REGEX)) {
+    const emoji = match[0];
+    const index = match.index ?? 0;
+    const imageUrl = emojiImageUrl(emoji);
+
+    if (!imageUrl) {
+      continue;
+    }
+
+    if (index > lastIndex) {
+      parts.push(text.slice(lastIndex, index));
+    }
+
+    parts.push(
+      <img
+        key={`${keyPrefix}-${index}-${emoji}`}
+        src={imageUrl}
+        alt={emoji}
+        draggable={false}
+        className={`discord-inline-emoji ${sizeClassName}`}
+      />
+    );
+
+    lastIndex = index + emoji.length;
+  }
+
+  if (!parts.length) {
+    return [text];
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts;
+};
+
+const renderEmojiChildren = (children: ReactNode, keyPrefix: string, sizeClassName?: string): ReactNode => {
+  return Children.map(children, (child, index) => {
+    const childKey = `${keyPrefix}-${index}`;
+
+    if (typeof child === "string") {
+      return <Fragment key={childKey}>{renderEmojiText(child, childKey, sizeClassName)}</Fragment>;
+    }
+
+    if (!isValidElement(child)) {
+      return child;
+    }
+
+    const existingChildren = child.props.children as ReactNode;
+    if (existingChildren === undefined) {
+      return child;
+    }
+
+    return cloneElement(child, {
+      ...child.props,
+      key: child.key ?? childKey,
+      children: renderEmojiChildren(existingChildren, childKey, sizeClassName)
+    });
+  });
+};
+
+const EmojiGlyph = ({ emoji, sizeClassName = "h-[1.3em] w-[1.3em]" }: { emoji: string; sizeClassName?: string }): JSX.Element => {
+  const imageUrl = emojiImageUrl(emoji);
+
+  if (!imageUrl) {
+    return <span>{emoji}</span>;
+  }
+
+  return <img src={imageUrl} alt={emoji} draggable={false} className={`discord-inline-emoji ${sizeClassName}`} />;
+};
+
+const emojiOnlySizeClass = (count: number): string => {
+  if (count <= 3) {
+    return "h-12 w-12 md:h-16 md:w-16";
+  }
+
+  if (count <= 6) {
+    return "h-10 w-10 md:h-14 md:w-14";
+  }
+
+  return "h-8 w-8 md:h-10 md:w-10";
 };
 
 const InviteEmbed = ({ inviteCode }: { inviteCode: string }): JSX.Element | null => {
@@ -479,15 +647,18 @@ const ChatArea = ({
   const [attachment, setAttachment] = useState<File | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
-  const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+  const [reactionPickerFor, setReactionPickerFor] = useState<ReactionPickerState | null>(null);
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null);
   const [memberContextMenu, setMemberContextMenu] = useState<MemberContextMenu | null>(null);
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
+  const [highlightedEmojiIndex, setHighlightedEmojiIndex] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerPickerRef = useRef<HTMLDivElement>(null);
+  const composerPreviewRef = useRef<HTMLDivElement>(null);
   const consumedFocusMessageIdRef = useRef<string | null>(null);
   const initialScrollPositionedRef = useRef(false);
   const stickToBottomRef = useRef(true);
@@ -518,6 +689,8 @@ const ChatArea = ({
   }, [content, mode]);
 
   const mentionQuery = mentionToken ? mentionToken[1].toLowerCase() : null;
+  const emojiToken = useMemo(() => content.match(/(?:^|\s):([a-zA-Z0-9_+-]{1,32})$/), [content]);
+  const emojiQuery = emojiToken?.[1]?.toLowerCase() ?? null;
   const mentionCandidates = useMemo(() => {
     if (mode !== "SERVER" || !mentionToken) {
       return [] as ServerMember[];
@@ -545,12 +718,58 @@ const ChatArea = ({
     });
   }, [mentionMembers, mentionQuery, mentionToken, mode]);
 
+  const emojiCandidates = useMemo(() => {
+    if (!emojiQuery) {
+      return [] as EmojiSuggestion[];
+    }
+
+    const seen = new Set<string>();
+
+    return AUTOCOMPLETE_EMOJIS
+      .flatMap((emoji) => {
+        const names = emoji.n ?? [];
+        const matchedName = names.find((name) => name.toLowerCase().includes(emojiQuery));
+        if (!matchedName || seen.has(emoji.u)) {
+          return [];
+        }
+
+        seen.add(emoji.u);
+        return [{
+          name: matchedName,
+          emoji: unifiedToEmoji(emoji.u),
+          unified: emoji.u
+        }];
+      })
+      .sort((a, b) => {
+        const aStarts = a.name.startsWith(emojiQuery);
+        const bStarts = b.name.startsWith(emojiQuery);
+        if (aStarts !== bStarts) {
+          return aStarts ? -1 : 1;
+        }
+        if (a.name.length !== b.name.length) {
+          return a.name.length - b.name.length;
+        }
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, EMOJI_AUTOCOMPLETE_LIMIT);
+  }, [emojiQuery]);
+
   const mentionMenuOpen = mode === "SERVER" && Boolean(mentionToken) && mentionCandidates.length > 0;
+  const emojiMenuOpen = Boolean(emojiToken) && emojiCandidates.length > 0;
+  const overlayMenuOpen = showPicker || reactionPickerFor !== null || mentionMenuOpen || emojiMenuOpen;
 
   const membersByUsername = useMemo(() => {
     const map = new Map<string, ServerMember>();
     for (const member of mentionMembers) {
       map.set(member.user.username.toLowerCase(), member);
+    }
+    return map;
+  }, [mentionMembers]);
+
+  const memberDisplayNamesByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of mentionMembers) {
+      map.set(member.userId, member.nickname || member.user.nickname || member.user.username);
     }
     return map;
   }, [mentionMembers]);
@@ -605,10 +824,10 @@ const ChatArea = ({
             const mentionStart = fullStart + leading.length;
 
             if (fullStart > lastIndex) {
-              parts.push(line.slice(lastIndex, fullStart));
+              parts.push(...renderEmojiText(line.slice(lastIndex, fullStart), `mention-text-${lineIndex}-${lastIndex}`));
             }
             if (leading) {
-              parts.push(leading);
+              parts.push(...renderEmojiText(leading, `mention-leading-${lineIndex}-${mentionStart}`));
             }
 
             const member = resolveMentionMember(token);
@@ -633,7 +852,7 @@ const ChatArea = ({
           }
 
           if (lastIndex < line.length) {
-            parts.push(line.slice(lastIndex));
+            parts.push(...renderEmojiText(line.slice(lastIndex), `mention-tail-${lineIndex}-${lastIndex}`));
           }
 
           return (
@@ -648,12 +867,24 @@ const ChatArea = ({
   };
 
   const renderMessageContent = (rawContent: string): JSX.Element => {
+    const jumboEmoji = emojiOnlySegments(rawContent);
+    if (jumboEmoji.length > 0) {
+      const sizeClassName = emojiOnlySizeClass(jumboEmoji.length);
+      return (
+        <span className="discord-jumbo-emoji-row" aria-label={rawContent.trim()}>
+          {jumboEmoji.map((emoji, index) => (
+            <EmojiGlyph key={`jumbo-${index}-${emoji}`} emoji={emoji} sizeClassName={sizeClassName} />
+          ))}
+        </span>
+      );
+    }
+
     if (mode === "SERVER" && /(^|\s)@([a-zA-Z0-9_]{1,32})/.test(rawContent)) {
       return renderMentionPills(rawContent);
     }
 
     if (!MARKDOWN_SYNTAX_REGEX.test(rawContent)) {
-      return <span className="whitespace-pre-wrap">{rawContent}</span>;
+      return <span className="whitespace-pre-wrap">{renderEmojiText(rawContent, "plain-message")}</span>;
     }
 
     return (
@@ -662,9 +893,15 @@ const ChatArea = ({
         components={{
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noreferrer" className="text-[#00a8fc] hover:underline">
-              {children}
+              {renderEmojiChildren(children, "markdown-link")}
             </a>
-          )
+          ),
+          p: ({ children }) => <>{renderEmojiChildren(children, "markdown-paragraph")}</>,
+          strong: ({ children }) => <strong>{renderEmojiChildren(children, "markdown-strong")}</strong>,
+          em: ({ children }) => <em>{renderEmojiChildren(children, "markdown-em")}</em>,
+          del: ({ children }) => <del>{renderEmojiChildren(children, "markdown-del")}</del>,
+          li: ({ children }) => <li>{renderEmojiChildren(children, "markdown-li")}</li>,
+          blockquote: ({ children }) => <blockquote>{renderEmojiChildren(children, "markdown-blockquote")}</blockquote>
         }}
       >
         {rawContent}
@@ -784,6 +1021,31 @@ const ChatArea = ({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior });
   };
 
+  const getReactionPickerPlacement = (trigger: HTMLElement): "above" | "below" => {
+    const rect = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    if (spaceBelow < REACTION_PICKER_HEIGHT + REACTION_PICKER_MARGIN && spaceAbove > spaceBelow) {
+      return "above";
+    }
+
+    return "below";
+  };
+
+  const toggleReactionPicker = (messageId: string, trigger: HTMLElement): void => {
+    setReactionPickerFor((current) => {
+      if (current?.messageId === messageId) {
+        return null;
+      }
+
+      return {
+        messageId,
+        placement: getReactionPickerPlacement(trigger)
+      };
+    });
+  };
+
   useEffect(() => {
     initialScrollPositionedRef.current = false;
     consumedFocusMessageIdRef.current = null;
@@ -827,6 +1089,11 @@ const ChatArea = ({
       return;
     }
 
+    const node = scrollRef.current;
+    if (!node) {
+      return;
+    }
+
     const previousCount = previousMessageCountRef.current;
     const messageCountIncreased = messages.length > previousCount;
     previousMessageCountRef.current = messages.length;
@@ -835,8 +1102,7 @@ const ChatArea = ({
     const defaultBehavior: ScrollBehavior = "auto";
 
     const scrollBottom = (): void => {
-      scrollToBottom(defaultBehavior);
-      initialScrollPositionedRef.current = true;
+      node.scrollTo({ top: node.scrollHeight, behavior: defaultBehavior });
     };
 
     if (mode === "SERVER" && focusMessageId && consumedFocusMessageIdRef.current !== focusMessageId) {
@@ -862,6 +1128,16 @@ const ChatArea = ({
       return;
     }
 
+    if (isInitialPosition) {
+      scrollBottom();
+
+      const allMeasured = messages.every((message) => Boolean(measuredMessageHeightsRef.current[message.id]));
+      if (allMeasured || heightVersion > 0) {
+        initialScrollPositionedRef.current = true;
+      }
+      return;
+    }
+
     if (!isInitialPosition && !messageCountIncreased) {
       return;
     }
@@ -871,22 +1147,7 @@ const ChatArea = ({
     }
 
     scrollBottom();
-  }, [focusMessageId, messages, mode, scrollMessageIntoView]);
-
-  useLayoutEffect(() => {
-    const pendingRequest = pendingScrollRequestRef.current;
-    if (!pendingRequest) {
-      return;
-    }
-
-    const element = document.getElementById(`message-${pendingRequest.messageId}`);
-    if (!element) {
-      return;
-    }
-
-    element.scrollIntoView({ behavior: pendingRequest.behavior, block: pendingRequest.block });
-    pendingScrollRequestRef.current = null;
-  }, [heightVersion, scrollTop, visibleRange.end, visibleRange.start]);
+  }, [focusMessageId, heightVersion, messages, mode, scrollMessageIntoView]);
 
   // Auto-focus input when channel/DM changes
   useEffect(() => {
@@ -908,13 +1169,34 @@ const ChatArea = ({
         setReplyTo(null);
         setAttachment(null);
         setAttachmentError(null);
+        setShowPicker(false);
+        setReactionPickerFor(null);
       }
     };
+    const onPointerDown = (event: globalThis.MouseEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      if (target.closest(".discord-emoji-picker") || target.closest("[data-emoji-picker-toggle]") || target.closest("[data-reaction-picker-toggle]")) {
+        return;
+      }
+
+      if (composerPickerRef.current?.contains(target)) {
+        return;
+      }
+
+      setShowPicker(false);
+      setReactionPickerFor(null);
+    };
     window.addEventListener("click", closeContextMenu);
+    window.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("scroll", closeContextMenu, true);
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("click", closeContextMenu);
+      window.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("scroll", closeContextMenu, true);
       window.removeEventListener("keydown", onKeyDown);
     };
@@ -948,12 +1230,20 @@ const ChatArea = ({
   }, [mentionMenuOpen, mentionQuery]);
 
   useEffect(() => {
+    setHighlightedEmojiIndex(0);
+  }, [emojiMenuOpen, emojiQuery]);
+
+  useEffect(() => {
     if (!activeDraftKey) {
       setContent("");
       return;
     }
     setContent(drafts[activeDraftKey] ?? "");
   }, [activeDraftKey, drafts]);
+
+  useLayoutEffect(() => {
+    syncComposerPreviewScroll();
+  }, [content]);
 
   useEffect(() => {
     if (!attachment || (!attachment.type.startsWith("image/") && !attachment.type.startsWith("video/"))) {
@@ -994,6 +1284,20 @@ const ChatArea = ({
     setContent((prev) => prev.replace(/(?:^|\s)@([a-zA-Z0-9_]*)$/, (full) => `${full.startsWith(" ") ? " " : ""}@${member.user.username} `));
     setHighlightedMentionIndex(0);
     window.requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const selectEmoji = (emojiSuggestion: EmojiSuggestion): void => {
+    setContent((prev) => prev.replace(/(?:^|\s):([a-zA-Z0-9_+-]{1,32})$/, (full) => `${full.startsWith(" ") ? " " : ""}${emojiSuggestion.emoji} `));
+    setHighlightedEmojiIndex(0);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const syncComposerPreviewScroll = (): void => {
+    if (!composerPreviewRef.current || !inputRef.current) {
+      return;
+    }
+
+    composerPreviewRef.current.style.transform = `translateX(${-inputRef.current.scrollLeft}px)`;
   };
 
   const onSubmit = async (event: FormEvent): Promise<void> => {
@@ -1242,12 +1546,12 @@ const ChatArea = ({
                     setReplyTo(message);
                   }
                 }}
-                className={`group relative mb-0.5 flex gap-3 rounded px-2 isolate ${groupedCompact ? "py-0.5" : "py-1"} hover:bg-black/10 ${mentionMe ? "bg-[#3d3a2d]" : ""} ${
+                className={`group relative mb-0.5 flex gap-3 rounded px-2 isolate ${groupedCompact ? "py-0.5" : "py-1"} ${overlayMenuOpen ? "" : "hover:bg-black/10"} ${mentionMe ? "bg-[#3d3a2d]" : ""} ${
                   highlightMessageId === message.id || isReplyTarget ? "ring-1 ring-[#5865f2] bg-[#2d3244]/40" : ""
                 }`}
               >
                 {groupedCompact ? (
-                  <span className="invisible absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-discord-muted group-hover:visible">
+                  <span className={`invisible absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-discord-muted ${overlayMenuOpen ? "" : "group-hover:visible"}`}>
                     {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 ) : null}
@@ -1281,7 +1585,8 @@ const ChatArea = ({
                         className="min-w-0 truncate text-discord-muted hover:text-discord-text"
                         onClick={() => message.replyTo?.id && jumpToMessage(message.replyTo.id)}
                       >
-                        @{message.replyTo.author.nickname?.trim() || message.replyTo.author.username} {message.replyTo.content}
+                        @{message.replyTo.author.nickname?.trim() || message.replyTo.author.username}
+                        {renderEmojiText(` ${message.replyTo.content}`, `reply-preview-${message.id}`)}
                       </button>
                     </div>
                   ) : null}
@@ -1337,17 +1642,33 @@ const ChatArea = ({
                   {"reactions" in message && message.reactions.length > 0 ? (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {Object.entries(
-                        message.reactions.reduce<Record<string, number>>((acc, reaction) => {
-                          acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
+                        message.reactions.reduce<Record<string, ReactionSummary>>((acc, reaction) => {
+                          const existingReaction = acc[reaction.emoji] ?? { count: 0, reacted: false, users: [] };
+                          existingReaction.count += 1;
+                          existingReaction.reacted = existingReaction.reacted || reaction.userId === me.id;
+                          const reactionDisplayName = memberDisplayNamesByUserId.get(reaction.userId)
+                            || reaction.user?.nickname?.trim()
+                            || reaction.user?.username
+                            || "Unknown user";
+                          if (!existingReaction.users.includes(reactionDisplayName)) {
+                            existingReaction.users.push(reactionDisplayName);
+                          }
+                          acc[reaction.emoji] = existingReaction;
                           return acc;
                         }, {})
-                      ).map(([emoji, count]) => (
+                      ).map(([emoji, reactionState]) => (
                         <button
                           key={`${message.id}-${emoji}`}
                           onClick={() => void toggleReaction(message.id, emoji)}
-                          className="rounded bg-[#2b2d31] px-2 py-0.5 text-xs hover:bg-[#35373c]"
+                          className={`group/reaction relative inline-flex min-h-8 items-center justify-center rounded-full border px-2.5 py-1 text-xs leading-none transition-colors ${reactionState.reacted ? "border-[#5865f2] bg-[#3b4270] text-[#dfe5ff]" : "border-[#4a4d55] bg-[#2b2d31] text-[#dbdee1] hover:bg-[#35373c]"}`}
                         >
-                          {emoji} {count}
+                          <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-[#111214] px-2 py-1 text-[11px] font-medium text-white shadow-lg group-hover/reaction:block">
+                            {reactionState.users.join(", ")}
+                          </span>
+                          <span className="inline-flex items-center justify-center gap-1.5 leading-none">
+                            <EmojiGlyph emoji={emoji} sizeClassName="h-5 w-5" />
+                            <span className="relative top-[0.5px] font-medium">{reactionState.count}</span>
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -1355,7 +1676,7 @@ const ChatArea = ({
                 </div>
 
                 {editingId !== message.id ? (
-                  <div className="pointer-events-none absolute right-2 top-1 z-10 flex h-fit items-center gap-0.5 rounded bg-[#111214] p-0.5 opacity-0 shadow-md transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+                  <div className={`pointer-events-none absolute right-2 top-1 z-10 flex h-fit items-center gap-0.5 rounded bg-[#111214] p-0.5 shadow-md transition-opacity ${overlayMenuOpen ? "opacity-0" : "opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"}`}>
                     {mode === "SERVER" ? (
                       <>
                         <button
@@ -1368,7 +1689,8 @@ const ChatArea = ({
                         <button
                           className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
                           title="React"
-                          onClick={() => setReactionPickerFor(reactionPickerFor === message.id ? null : message.id)}
+                          data-reaction-picker-toggle="true"
+                          onClick={(event) => toggleReactionPicker(message.id, event.currentTarget)}
                         >
                           <Smile size={14} />
                         </button>
@@ -1385,7 +1707,8 @@ const ChatArea = ({
                         <button
                           className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
                           title="React"
-                          onClick={() => setReactionPickerFor(reactionPickerFor === message.id ? null : message.id)}
+                          data-reaction-picker-toggle="true"
+                          onClick={(event) => toggleReactionPicker(message.id, event.currentTarget)}
                         >
                           <Smile size={14} />
                         </button>
@@ -1431,14 +1754,14 @@ const ChatArea = ({
                   </div>
                 ) : null}
 
-                {reactionPickerFor === message.id ? (
-                  <div className="absolute right-2 top-8 z-30">
-                    <EmojiPicker
+                {reactionPickerFor?.messageId === message.id ? (
+                  <div className={`absolute right-2 z-50 ${reactionPickerFor.placement === "above" ? "bottom-8" : "top-8"}`}>
+                    <DiscordEmojiPicker
+                      variant="reaction"
                       onEmojiClick={(emojiData) => {
                         void toggleReaction(message.id, emojiData.emoji);
                         setReactionPickerFor(null);
                       }}
-                      theme={Theme.DARK}
                     />
                   </div>
                 ) : null}
@@ -1448,23 +1771,23 @@ const ChatArea = ({
           {visibleRange.bottomPadding > 0 ? <div style={{ height: visibleRange.bottomPadding }} /> : null}
       </div>
 
-      {typingLabel ? (
-        <div className="px-4 pb-1 text-xs text-discord-muted">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={typingLabel}
-              initial={{ opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 3 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-            >
-              {typingLabel}
-            </motion.div>
+      <form onSubmit={onSubmit} className="relative p-4 pt-2">
+        <div className="pointer-events-none absolute bottom-full left-0 right-0 px-4 pb-1 text-xs text-discord-muted">
+          <AnimatePresence initial={false} mode="wait">
+            {typingLabel ? (
+              <motion.div
+                key={typingLabel}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              >
+                {typingLabel}
+              </motion.div>
+            ) : null}
           </AnimatePresence>
         </div>
-      ) : null}
 
-      <form onSubmit={onSubmit} className="relative p-4 pt-2">
         <input
           ref={fileInputRef}
           type="file"
@@ -1522,75 +1845,102 @@ const ChatArea = ({
             <button type="button" className="text-discord-muted hover:text-white" onClick={() => fileInputRef.current?.click()}>
               <Paperclip size={18} />
             </button>
-            <input
-              ref={inputRef}
-              value={content}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setContent(nextValue);
-                if (activeDraftKey) {
-                  setDrafts((prev) => {
-                    const next = { ...prev };
-                    if (nextValue.trim()) {
-                      next[activeDraftKey] = nextValue;
-                    } else {
-                      delete next[activeDraftKey];
+            <div className="relative min-w-0 flex-1">
+              {content ? (
+                <div className="pointer-events-none absolute inset-0 flex items-center overflow-hidden text-sm text-white">
+                  <div ref={composerPreviewRef} className="min-w-full whitespace-nowrap pr-2">
+                    {renderEmojiText(content, "composer-input", "h-[1.25em] w-[1.25em]")}
+                  </div>
+                </div>
+              ) : null}
+              <input
+                ref={inputRef}
+                value={content}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setContent(nextValue);
+                  if (activeDraftKey) {
+                    setDrafts((prev) => {
+                      const next = { ...prev };
+                      if (nextValue.trim()) {
+                        next[activeDraftKey] = nextValue;
+                      } else {
+                        delete next[activeDraftKey];
+                      }
+                      persistDrafts(next);
+                      return next;
+                    });
+                  }
+                  const socket = getSocket();
+                  if (mode === "SERVER" && activeChannelId) {
+                    socket?.emit("typing:start", { scope: "CHANNEL", id: activeChannelId });
+                  } else if (mode === "DM" && activeDMId) {
+                    socket?.emit("typing:start", { scope: "DM", id: activeDMId });
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (!mentionMenuOpen && !emojiMenuOpen) {
+                    return;
+                  }
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    if (mentionMenuOpen) {
+                      setHighlightedMentionIndex((current) => (current + 1) % mentionCandidates.length);
+                    } else if (emojiMenuOpen) {
+                      setHighlightedEmojiIndex((current) => (current + 1) % emojiCandidates.length);
                     }
-                    persistDrafts(next);
-                    return next;
-                  });
-                }
-                const socket = getSocket();
-                if (mode === "SERVER" && activeChannelId) {
-                  socket?.emit("typing:start", { scope: "CHANNEL", id: activeChannelId });
-                } else if (mode === "DM" && activeDMId) {
-                  socket?.emit("typing:start", { scope: "DM", id: activeDMId });
-                }
-              }}
-              onKeyDown={(event) => {
-                if (!mentionMenuOpen) {
-                  return;
-                }
-                if (event.key === "ArrowDown") {
+                    return;
+                  }
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    if (mentionMenuOpen) {
+                      setHighlightedMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length);
+                    } else if (emojiMenuOpen) {
+                      setHighlightedEmojiIndex((current) => (current - 1 + emojiCandidates.length) % emojiCandidates.length);
+                    }
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === "Tab") {
+                    event.preventDefault();
+                    if (mentionMenuOpen) {
+                      selectMention(mentionCandidates[highlightedMentionIndex] ?? mentionCandidates[0]);
+                    } else if (emojiMenuOpen) {
+                      selectEmoji(emojiCandidates[highlightedEmojiIndex] ?? emojiCandidates[0]);
+                    }
+                  }
+                }}
+                onPaste={(event) => {
+                  const file = getFirstAttachableFile(event.clipboardData);
+                  if (!file) {
+                    return;
+                  }
                   event.preventDefault();
-                  setHighlightedMentionIndex((current) => (current + 1) % mentionCandidates.length);
-                  return;
-                }
-                if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setHighlightedMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length);
-                  return;
-                }
-                if (event.key === "Enter" || event.key === "Tab") {
-                  event.preventDefault();
-                  selectMention(mentionCandidates[highlightedMentionIndex] ?? mentionCandidates[0]);
-                }
-              }}
-              onPaste={(event) => {
-                const file = getFirstAttachableFile(event.clipboardData);
-                if (!file) {
-                  return;
-                }
-                event.preventDefault();
-                if (file.size > MAX_ATTACHMENT_BYTES) {
-                  setAttachment(null);
-                  setAttachmentError("You can't send files larger than 100 MB.");
-                  return;
-                }
-                setAttachment(file);
-                setAttachmentError(null);
-              }}
-              placeholder={mode === "SERVER" ? `Message #${channelName}` : `Message @${channelName}`}
-              className="w-full bg-transparent text-sm text-white placeholder:text-[#dadde5] outline-none"
-            />
-            <button type="button" className="text-discord-muted hover:text-white" onClick={() => setShowPicker((v) => !v)}>
+                  if (file.size > MAX_ATTACHMENT_BYTES) {
+                    setAttachment(null);
+                    setAttachmentError("You can't send files larger than 100 MB.");
+                    return;
+                  }
+                  setAttachment(file);
+                  setAttachmentError(null);
+                }}
+                onScroll={syncComposerPreviewScroll}
+                placeholder={mode === "SERVER" ? `Message #${channelName}` : `Message @${channelName}`}
+                className={`w-full bg-transparent text-sm outline-none ${content ? "text-transparent caret-white" : "text-white"} placeholder:text-[#dadde5] selection:bg-[#5865f2]/40`}
+              />
+            </div>
+            <button
+              type="button"
+              className="text-discord-muted hover:text-white"
+              data-emoji-picker-toggle="composer"
+              onClick={() => setShowPicker((v) => !v)}
+            >
               <Smile size={18} />
             </button>
           </div>
         </div>
         {attachmentError ? <p className="mt-1 text-xs text-[#ed4245]">{attachmentError}</p> : null}
         {mentionMenuOpen ? (
-          <div className="absolute bottom-14 left-4 right-4 z-30 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg">
+          <div className="absolute bottom-14 left-4 right-4 z-40 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg">
             <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
               Members matching @{mentionQuery}
             </p>
@@ -1622,14 +1972,41 @@ const ChatArea = ({
           </div>
         ) : null}
 
+        {emojiMenuOpen ? (
+          <div className="absolute bottom-14 left-4 right-4 z-40 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg">
+            <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
+              Emojis matching :{emojiQuery}
+            </p>
+            <div className="py-1">
+              {emojiCandidates.map((emojiCandidate, index) => {
+                const selected = index === highlightedEmojiIndex;
+                return (
+                  <button
+                    key={emojiCandidate.unified}
+                    type="button"
+                    className={`flex w-full items-center gap-3 px-3 py-2 text-left ${selected ? "bg-[#3a3d45]" : "hover:bg-[#2b2d31]"}`}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      selectEmoji(emojiCandidate);
+                    }}
+                  >
+                    <EmojiGlyph emoji={emojiCandidate.emoji} sizeClassName="h-6 w-6" />
+                    <span className="truncate text-sm text-white">:{emojiCandidate.name}:</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
         {showPicker ? (
-          <div className="absolute bottom-16 right-4 z-20">
-            <EmojiPicker
+          <div ref={composerPickerRef} className="absolute bottom-16 right-4 z-50">
+            <DiscordEmojiPicker
+              variant="composer"
               onEmojiClick={(emojiData) => {
                 setContent((prev) => `${prev}${emojiData.emoji}`);
                 setShowPicker(false);
               }}
-              theme={Theme.DARK}
             />
           </div>
         ) : null}

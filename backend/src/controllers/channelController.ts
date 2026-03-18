@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "../lib/prisma";
+import { logAdminEvent } from "../lib/adminAudit";
 
 const prismaAny = prisma as any;
 
@@ -55,6 +56,29 @@ const canModerateChannel = async (channelId: string, userId: string): Promise<bo
   }
   return roleInfo.ownerId === userId || roleInfo.role === "ADMIN";
 };
+
+const messageDetailsInclude = {
+  author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+  reactions: {
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          nickname: true,
+          avatarUrl: true
+        }
+      }
+    }
+  },
+  replyTo: {
+    select: {
+      id: true,
+      content: true,
+      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
+    }
+  }
+} as const;
 
 export const createCategory = async (req: Request, res: Response): Promise<void> => {
   const { serverId } = req.params;
@@ -116,6 +140,13 @@ export const createChannel = async (req: Request, res: Response): Promise<void> 
     }
   });
 
+  await logAdminEvent({
+    type: "CHANNEL_COUNT_UPDATED",
+    summary: `Channel count changed for server ${serverId}`,
+    targetServerId: serverId,
+    persist: false
+  });
+
   res.status(201).json({ channel });
 };
 
@@ -123,17 +154,7 @@ export const listMessages = async (req: Request, res: Response): Promise<void> =
   const { channelId } = req.params;
   const messages = await prisma.message.findMany({
     where: { channelId },
-    include: {
-      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-      reactions: true,
-      replyTo: {
-        select: {
-          id: true,
-          content: true,
-          author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
-        }
-      }
-    },
+    include: messageDetailsInclude,
     orderBy: { createdAt: "asc" }
   });
 
@@ -163,21 +184,18 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
       attachmentUrl,
       attachmentName
     },
-    include: {
-      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-      reactions: true,
-      replyTo: {
-        select: {
-          id: true,
-          content: true,
-          author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
-        }
-      }
-    }
+    include: messageDetailsInclude
   });
 
   const io = req.app.get("io");
   io.to(`channel:${channelId}`).emit("message:new", message);
+  const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
+  await logAdminEvent({
+    type: "MESSAGE_ACTIVITY",
+    summary: `Message count changed in channel ${channelId}`,
+    targetServerId: channel?.serverId ?? null,
+    persist: false
+  });
   res.status(201).json({ message });
 };
 
@@ -201,10 +219,7 @@ export const editMessage = async (req: Request, res: Response): Promise<void> =>
   const message = await prisma.message.update({
     where: { id: messageId },
     data: { content, editedAt: new Date() },
-    include: {
-      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-      reactions: true
-    }
+    include: messageDetailsInclude
   });
 
   const io = req.app.get("io");
@@ -233,6 +248,13 @@ export const deleteMessage = async (req: Request, res: Response): Promise<void> 
   deleteAttachmentIfLocal(attachmentUrl);
   const io = req.app.get("io");
   io.to(`channel:${existing.channelId}`).emit("message:deleted", { id: messageId });
+  const channel = await prisma.channel.findUnique({ where: { id: existing.channelId }, select: { serverId: true } });
+  await logAdminEvent({
+    type: "MESSAGE_ACTIVITY",
+    summary: `Message count changed in channel ${existing.channelId}`,
+    targetServerId: channel?.serverId ?? null,
+    persist: false
+  });
   res.json({ deleted: true });
 };
 
@@ -240,6 +262,16 @@ export const toggleReaction = async (req: Request, res: Response): Promise<void>
   const userId = req.user!.id;
   const { messageId } = req.params;
   const { emoji } = req.body as { emoji: string };
+
+  const message = await prisma.message.findUnique({
+    where: { id: messageId },
+    select: { id: true, channelId: true }
+  });
+
+  if (!message) {
+    res.status(404).json({ message: "Message not found" });
+    return;
+  }
 
   const existing = await prisma.messageReaction.findUnique({
     where: { messageId_userId_emoji: { messageId, userId, emoji } }
@@ -251,8 +283,14 @@ export const toggleReaction = async (req: Request, res: Response): Promise<void>
     await prisma.messageReaction.create({ data: { messageId, userId, emoji } });
   }
 
-  const reactions = await prisma.messageReaction.findMany({ where: { messageId } });
-  res.json({ reactions });
+  const updatedMessage = await prisma.message.findUnique({
+    where: { id: messageId },
+    include: messageDetailsInclude
+  });
+
+  const io = req.app.get("io");
+  io.to(`channel:${message.channelId}`).emit("message:updated", updatedMessage);
+  res.json({ message: updatedMessage });
 };
 
 export const togglePin = async (req: Request, res: Response): Promise<void> => {
@@ -308,6 +346,12 @@ export const deleteChannel = async (req: Request, res: Response): Promise<void> 
   }
 
   await prisma.channel.delete({ where: { id: channelId } });
+  await logAdminEvent({
+    type: "CHANNEL_COUNT_UPDATED",
+    summary: `Channel count changed for server ${channel.serverId}`,
+    targetServerId: channel.serverId,
+    persist: false
+  });
   res.json({ deleted: true });
 };
 

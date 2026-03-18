@@ -1,11 +1,15 @@
 import type { Request, Response } from "express";
+import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma";
+import { logAdminEvent } from "../lib/adminAudit";
 
 const prismaAny = prisma as any;
 const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const RESERVED_USERNAME = "deleteduser";
+const PASSWORD_MIN_LENGTH = 8;
+const RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const signToken = (id: string, username: string): string => {
   return jwt.sign({ id, username }, process.env.JWT_SECRET as string, {
@@ -16,8 +20,31 @@ const signToken = (id: string, username: string): string => {
 const cookieOptions = {
   httpOnly: true,
   sameSite: "lax" as const,
-  secure: false,
+  secure: process.env.NODE_ENV === "production",
   maxAge: 7 * 24 * 60 * 60 * 1000
+};
+
+const generateRecoveryCode = (): string => {
+  const raw = Array.from({ length: 16 }, () => {
+    const index = crypto.randomInt(0, RECOVERY_CODE_ALPHABET.length);
+    return RECOVERY_CODE_ALPHABET[index];
+  }).join("");
+
+  return raw.match(/.{1,4}/g)?.join("-") ?? raw;
+};
+
+const normalizeRecoveryCode = (value: string): string => value.replace(/[^a-z0-9]/gi, "").toUpperCase();
+
+const issueRecoveryCode = async (userId: string): Promise<string> => {
+  const recoveryCode = generateRecoveryCode();
+  const recoveryCodeHash = await bcrypt.hash(normalizeRecoveryCode(recoveryCode), 10);
+
+  await prismaAny.user.update({
+    where: { id: userId },
+    data: { recoveryCodeHash }
+  });
+
+  return recoveryCode;
 };
 
 export const register = async (req: Request, res: Response): Promise<void> => {
@@ -33,6 +60,10 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     res.status(400).json({ message: "This username is reserved" });
     return;
   }
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    res.status(400).json({ message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long` });
+    return;
+  }
 
   const existing = await prismaAny.user.findUnique({ where: { username: normalizedUsername } });
   if (existing) {
@@ -45,10 +76,18 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     data: { username: normalizedUsername, nickname: normalizedNickname || normalizedUsername, passwordHash },
     select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true }
   });
+  const recoveryCode = await issueRecoveryCode(user.id);
 
   const token = signToken(user.id, user.username);
   res.cookie("token", token, cookieOptions);
-  res.status(201).json({ user, token });
+  await logAdminEvent({
+    type: "USER_REGISTERED",
+    summary: `New user registered: ${user.username}`,
+    actorUserId: user.id,
+    actorUsername: user.username,
+    targetUserId: user.id
+  });
+  res.status(201).json({ user, token, recoveryCode });
 };
 
 export const login = async (req: Request, res: Response): Promise<void> => {
@@ -56,11 +95,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   const normalizedUsername = username.trim();
 
   const user = await prismaAny.user.findUnique({ where: { username: normalizedUsername } });
-  if (!user) {
-    res.status(401).json({ message: "Invalid username or password" });
-    return;
-  }
-  if (user.isDeleted) {
+  if (!user || user.isDeleted) {
     res.status(401).json({ message: "Invalid username or password" });
     return;
   }
@@ -87,6 +122,53 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       createdAt: user.createdAt
     }
   });
+};
+
+export const resetPasswordWithRecoveryCode = async (req: Request, res: Response): Promise<void> => {
+  const { username, recoveryCode, newPassword } = req.body as {
+    username: string;
+    recoveryCode: string;
+    newPassword: string;
+  };
+
+  if (newPassword.length < PASSWORD_MIN_LENGTH) {
+    res.status(400).json({ message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long` });
+    return;
+  }
+
+  const normalizedUsername = username.trim();
+  const normalizedRecoveryCode = normalizeRecoveryCode(recoveryCode);
+  const user = await prismaAny.user.findUnique({ where: { username: normalizedUsername } });
+
+  if (!user || user.isDeleted || !user.recoveryCodeHash) {
+    res.status(401).json({ message: "Invalid username or recovery key" });
+    return;
+  }
+
+  const validRecoveryCode = await bcrypt.compare(normalizedRecoveryCode, user.recoveryCodeHash);
+  if (!validRecoveryCode) {
+    res.status(401).json({ message: "Invalid username or recovery key" });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  const nextRecoveryCode = await generateRecoveryCode();
+  const nextRecoveryCodeHash = await bcrypt.hash(normalizeRecoveryCode(nextRecoveryCode), 10);
+
+  await prismaAny.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash,
+      recoveryCodeHash: nextRecoveryCodeHash
+    }
+  });
+
+  res.json({ message: "Password reset successful", recoveryCode: nextRecoveryCode });
+};
+
+export const regenerateRecoveryCode = async (req: Request, res: Response): Promise<void> => {
+  const recoveryCode = await issueRecoveryCode(req.user!.id);
+  res.json({ recoveryCode });
 };
 
 export const me = async (req: Request, res: Response): Promise<void> => {

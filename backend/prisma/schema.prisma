@@ -13,6 +13,7 @@ model User {
   nickname          String           @default("")
   isDeleted         Boolean          @default(false)
   passwordHash      String
+  recoveryCodeHash  String?
   avatarUrl         String?
   aboutMe           String           @default("")
   customStatus      String           @default("")
@@ -27,6 +28,17 @@ model User {
   incomingRequests  FriendRequest[]  @relation("IncomingRequests")
   dmChannels        DMChannel[]      @relation("DMParticipants")
   serverBans        ServerBan[]
+}
+
+model AdminEvent {
+  id           String   @id @default(cuid())
+  type         String
+  actorUserId  String?
+  actorUsername String?
+  targetUserId String?
+  targetServerId String?
+  summary      String
+  createdAt    DateTime @default(now())
 }
 
 model Server {

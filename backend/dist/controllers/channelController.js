@@ -7,6 +7,7 @@ exports.updateChannel = exports.deleteCategory = exports.deleteChannel = exports
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const prisma_1 = require("../lib/prisma");
+const adminAudit_1 = require("../lib/adminAudit");
 const prismaAny = prisma_1.prisma;
 const normalizeChannelName = (value) => {
     return value.trim().replace(/\s+/g, "-").toLowerCase();
@@ -48,6 +49,28 @@ const canModerateChannel = async (channelId, userId) => {
         return false;
     }
     return roleInfo.ownerId === userId || roleInfo.role === "ADMIN";
+};
+const messageDetailsInclude = {
+    author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+    reactions: {
+        include: {
+            user: {
+                select: {
+                    id: true,
+                    username: true,
+                    nickname: true,
+                    avatarUrl: true
+                }
+            }
+        }
+    },
+    replyTo: {
+        select: {
+            id: true,
+            content: true,
+            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
+        }
+    }
 };
 const createCategory = async (req, res) => {
     const { serverId } = req.params;
@@ -97,6 +120,12 @@ const createChannel = async (req, res) => {
             categoryId: categoryId ?? null
         }
     });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "CHANNEL_COUNT_UPDATED",
+        summary: `Channel count changed for server ${serverId}`,
+        targetServerId: serverId,
+        persist: false
+    });
     res.status(201).json({ channel });
 };
 exports.createChannel = createChannel;
@@ -104,17 +133,7 @@ const listMessages = async (req, res) => {
     const { channelId } = req.params;
     const messages = await prisma_1.prisma.message.findMany({
         where: { channelId },
-        include: {
-            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-            reactions: true,
-            replyTo: {
-                select: {
-                    id: true,
-                    content: true,
-                    author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
-                }
-            }
-        },
+        include: messageDetailsInclude,
         orderBy: { createdAt: "asc" }
     });
     res.json({ messages });
@@ -140,20 +159,17 @@ const createMessage = async (req, res) => {
             attachmentUrl,
             attachmentName
         },
-        include: {
-            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-            reactions: true,
-            replyTo: {
-                select: {
-                    id: true,
-                    content: true,
-                    author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
-                }
-            }
-        }
+        include: messageDetailsInclude
     });
     const io = req.app.get("io");
     io.to(`channel:${channelId}`).emit("message:new", message);
+    const channel = await prisma_1.prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "MESSAGE_ACTIVITY",
+        summary: `Message count changed in channel ${channelId}`,
+        targetServerId: channel?.serverId ?? null,
+        persist: false
+    });
     res.status(201).json({ message });
 };
 exports.createMessage = createMessage;
@@ -174,10 +190,7 @@ const editMessage = async (req, res) => {
     const message = await prisma_1.prisma.message.update({
         where: { id: messageId },
         data: { content, editedAt: new Date() },
-        include: {
-            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-            reactions: true
-        }
+        include: messageDetailsInclude
     });
     const io = req.app.get("io");
     io.to(`channel:${message.channelId}`).emit("message:updated", message);
@@ -202,6 +215,13 @@ const deleteMessage = async (req, res) => {
     deleteAttachmentIfLocal(attachmentUrl);
     const io = req.app.get("io");
     io.to(`channel:${existing.channelId}`).emit("message:deleted", { id: messageId });
+    const channel = await prisma_1.prisma.channel.findUnique({ where: { id: existing.channelId }, select: { serverId: true } });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "MESSAGE_ACTIVITY",
+        summary: `Message count changed in channel ${existing.channelId}`,
+        targetServerId: channel?.serverId ?? null,
+        persist: false
+    });
     res.json({ deleted: true });
 };
 exports.deleteMessage = deleteMessage;
@@ -209,6 +229,14 @@ const toggleReaction = async (req, res) => {
     const userId = req.user.id;
     const { messageId } = req.params;
     const { emoji } = req.body;
+    const message = await prisma_1.prisma.message.findUnique({
+        where: { id: messageId },
+        select: { id: true, channelId: true }
+    });
+    if (!message) {
+        res.status(404).json({ message: "Message not found" });
+        return;
+    }
     const existing = await prisma_1.prisma.messageReaction.findUnique({
         where: { messageId_userId_emoji: { messageId, userId, emoji } }
     });
@@ -218,8 +246,13 @@ const toggleReaction = async (req, res) => {
     else {
         await prisma_1.prisma.messageReaction.create({ data: { messageId, userId, emoji } });
     }
-    const reactions = await prisma_1.prisma.messageReaction.findMany({ where: { messageId } });
-    res.json({ reactions });
+    const updatedMessage = await prisma_1.prisma.message.findUnique({
+        where: { id: messageId },
+        include: messageDetailsInclude
+    });
+    const io = req.app.get("io");
+    io.to(`channel:${message.channelId}`).emit("message:updated", updatedMessage);
+    res.json({ message: updatedMessage });
 };
 exports.toggleReaction = toggleReaction;
 const togglePin = async (req, res) => {
@@ -268,6 +301,12 @@ const deleteChannel = async (req, res) => {
         return;
     }
     await prisma_1.prisma.channel.delete({ where: { id: channelId } });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "CHANNEL_COUNT_UPDATED",
+        summary: `Channel count changed for server ${channel.serverId}`,
+        targetServerId: channel.serverId,
+        persist: false
+    });
     res.json({ deleted: true });
 };
 exports.deleteChannel = deleteChannel;

@@ -6,6 +6,7 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/authRoutes";
+import adminRoutes from "./routes/adminRoutes";
 import serverRoutes from "./routes/serverRoutes";
 import channelRoutes from "./routes/channelRoutes";
 import userRoutes from "./routes/userRoutes";
@@ -25,7 +26,7 @@ const normalizeOrigin = (value: string): string => {
   }
 };
 
-const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? "")
+const allowedOrigins = `${process.env.FRONTEND_ORIGIN ?? ""},${process.env.ADMIN_TOOL_ORIGIN ?? ""}`
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean)
@@ -67,6 +68,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/servers", serverRoutes);
 app.use("/api/chat", channelRoutes);
 app.use("/api/users", userRoutes);

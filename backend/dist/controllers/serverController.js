@@ -8,6 +8,7 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const uuid_1 = require("uuid");
 const prisma_1 = require("../lib/prisma");
+const adminAudit_1 = require("../lib/adminAudit");
 const prismaAny = prisma_1.prisma;
 const makeInviteCode = () => (0, uuid_1.v4)().replace(/-/g, "").slice(0, 8);
 const SYSTEM_USERNAME = "Discrope";
@@ -65,6 +66,12 @@ const postSystemMessage = async (serverId, content, app) => {
     });
     const io = app.get("io");
     io.to(`channel:${generalChannel.id}`).emit("message:new", message);
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "MESSAGE_ACTIVITY",
+        summary: `Message count changed in server ${serverId}`,
+        targetServerId: serverId,
+        persist: false
+    });
 };
 const normalizeInviteCode = (value) => {
     if (!value) {
@@ -156,6 +163,13 @@ const createServer = async (req, res) => {
             include: { categories: true, channels: true, members: true }
         });
     });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "SERVER_CREATED",
+        summary: `Server created: ${server.name}`,
+        actorUserId: userId,
+        actorUsername: req.user.username,
+        targetServerId: server.id
+    });
     res.status(201).json({ server });
 };
 exports.createServer = createServer;
@@ -196,6 +210,12 @@ const joinByInvite = async (req, res) => {
         io.emit("server:member:joined", {
             serverId: server.id,
             member: createdMembership
+        });
+        await (0, adminAudit_1.logAdminEvent)({
+            type: "MEMBER_COUNT_UPDATED",
+            summary: `Member count changed for server ${server.name}`,
+            targetServerId: server.id,
+            persist: false
         });
         const joinedUser = createdMembership.user;
         await postSystemMessage(server.id, `${joinedUser.nickname || joinedUser.username || "A user"} joined the server.`, req.app);
@@ -239,6 +259,12 @@ const leaveServer = async (req, res) => {
     await prisma_1.prisma.serverMember.delete({ where: { userId_serverId: { userId, serverId } } });
     const io = req.app.get("io");
     io.emit("server:member:left", { serverId, userId });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "MEMBER_COUNT_UPDATED",
+        summary: `Member count changed for server ${serverId}`,
+        targetServerId: serverId,
+        persist: false
+    });
     const leftUser = await prismaAny.user.findUnique({ where: { id: userId }, select: { username: true, nickname: true } });
     await postSystemMessage(serverId, `${leftUser?.nickname || leftUser?.username || "A user"} left the server.`, req.app);
     res.json({ left: true });
@@ -325,6 +351,13 @@ const deleteServer = async (req, res) => {
     await prisma_1.prisma.server.delete({ where: { id: serverId } });
     const io = req.app.get("io");
     io.emit("server:deleted", { serverId });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "SERVER_DELETED",
+        summary: `Server deleted: ${serverId}`,
+        actorUserId: userId,
+        actorUsername: req.user.username,
+        targetServerId: serverId
+    });
     deleteLocalFileIfExists(existing.iconUrl);
     res.json({ deleted: true });
 };
@@ -349,6 +382,12 @@ const kickMember = async (req, res) => {
     await prisma_1.prisma.serverMember.deleteMany({ where: { serverId, userId: memberId } });
     const io = req.app.get("io");
     io.emit("server:member:left", { serverId, userId: memberId });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "MEMBER_COUNT_UPDATED",
+        summary: `Member count changed for server ${serverId}`,
+        targetServerId: serverId,
+        persist: false
+    });
     const kickedUser = await prismaAny.user.findUnique({ where: { id: memberId }, select: { username: true, nickname: true } });
     await postSystemMessage(serverId, `${kickedUser?.nickname || kickedUser?.username || "A user"} was kicked from the server.`, req.app);
     res.json({ kicked: true });
@@ -375,6 +414,12 @@ const banMember = async (req, res) => {
     await prisma_1.prisma.serverMember.deleteMany({ where: { serverId, userId: memberId } });
     const io = req.app.get("io");
     io.emit("server:member:left", { serverId, userId: memberId });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "MEMBER_COUNT_UPDATED",
+        summary: `Member count changed for server ${serverId}`,
+        targetServerId: serverId,
+        persist: false
+    });
     await prismaAny.serverBan.upsert({
         where: { userId_serverId: { userId: memberId, serverId } },
         update: { reason: reason ?? null },

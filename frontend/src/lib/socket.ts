@@ -6,7 +6,8 @@ const socketUrl = import.meta.env.VITE_SOCKET_URL ?? "http://localhost:4000";
 export const getSocket = (): Socket | null => socket;
 
 export const connectSocket = (token: string): Socket => {
-  if (socket?.connected) {
+  if (socket) {
+    socket.auth = { token };
     return socket;
   }
 

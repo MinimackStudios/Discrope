@@ -74,3 +74,113 @@ html {
   padding: 0 4px;
   border-radius: 4px;
 }
+
+.discord-inline-emoji {
+  display: inline-block;
+  margin: 0 0.04em;
+  vertical-align: -0.22em;
+  object-fit: contain;
+}
+
+.discord-jumbo-emoji-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  line-height: 1;
+  max-width: min(100%, 28rem);
+}
+
+.discord-emoji-picker {
+  border: 1px solid #1f2125 !important;
+  border-radius: 12px !important;
+  background: #313338 !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.4) !important;
+}
+
+.discord-emoji-picker.EmojiPickerReact {
+  --epr-bg-color: #313338;
+  --epr-picker-border-color: #1f2125;
+  --epr-hover-bg-color: #3b3d44;
+  --epr-text-color: #f2f3f5;
+  --epr-search-input-bg-color: #1e1f22;
+  --epr-search-input-bg-color-active: #1e1f22;
+  --epr-search-border-color: #1e1f22;
+  --epr-search-border-color-active: #5865f2;
+  --epr-search-input-text-color: #f2f3f5;
+  --epr-search-input-placeholder-color: #949ba4;
+  --epr-category-label-bg-color: #313338ee;
+  --epr-category-label-text-color: #b5bac1;
+  --epr-category-icon-active-color: #5865f2;
+  --epr-emoji-hover-color: #3a3c43;
+  --epr-preview-border-color: #232428;
+  --epr-emoji-variation-picker-bg-color: #232428;
+  --epr-horizontal-padding: 12px;
+  --epr-search-input-height: 36px;
+  --epr-search-input-border-radius: 8px;
+  --epr-search-input-padding: 0 34px;
+  --epr-category-navigation-button-size: 28px;
+  --epr-emoji-size: 28px;
+  --epr-emoji-padding: 7px;
+}
+
+.discord-emoji-picker .epr-header {
+  padding-bottom: 8px !important;
+}
+
+.discord-emoji-picker .epr-search-container input {
+  font-size: 14px !important;
+}
+
+.discord-emoji-picker .epr-search-container input::placeholder {
+  color: #949ba4 !important;
+}
+
+.discord-emoji-picker .epr-category-nav {
+  padding-top: 0 !important;
+  padding-bottom: 10px !important;
+  border-bottom: 1px solid #232428;
+}
+
+.discord-emoji-picker .epr-category-nav button {
+  border-radius: 8px !important;
+}
+
+.discord-emoji-picker .epr-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.discord-emoji-picker .epr-body::-webkit-scrollbar-thumb {
+  background: #1a1b1e;
+  border-radius: 8px;
+}
+
+.discord-emoji-picker .epr-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.discord-emoji-picker .epr-emoji-category-label {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.discord-emoji-picker .epr-emoji-category-content {
+  gap: 2px 0 !important;
+}
+
+.discord-emoji-picker .epr-emoji-img,
+.discord-emoji-picker .epr-emoji-native {
+  filter: saturate(1.04);
+}
+
+.discord-emoji-picker--reaction.EmojiPickerReact {
+  width: 336px !important;
+  height: 404px !important;
+}
+
+.discord-emoji-picker--composer.EmojiPickerReact {
+  width: 372px !important;
+  height: 456px !important;
+}

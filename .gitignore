@@ -8,3 +8,4 @@ frontend/tsconfig.tsbuildinfo
 .env
 .DS_Store
 DEPLOY_FREE.md
+local-admin/

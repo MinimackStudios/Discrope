@@ -8,6 +8,12 @@ const typingTimeouts = new Map<string, number>();
 const UNREAD_STORAGE_KEY = "discrope_unreads_v1";
 const VIEW_STORAGE_KEY = "discrope_view_v1";
 const HIDDEN_DMS_STORAGE_KEY = "discrope_hidden_dms_v1";
+const NOTIFICATION_SOUND_URL = `${import.meta.env.BASE_URL}notif.mp3`;
+
+let notificationAudio: HTMLAudioElement | null = null;
+const processedSocketEventKeys: string[] = [];
+const processedSocketEventSet = new Set<string>();
+const MAX_PROCESSED_SOCKET_EVENTS = 500;
 
 type PersistedUnreadState = {
   unreadByChannel: Record<string, number>;
@@ -107,6 +113,44 @@ const persistHiddenDMs = (hiddenDMIds: Record<string, boolean>): void => {
     return;
   }
   window.localStorage.setItem(HIDDEN_DMS_STORAGE_KEY, JSON.stringify(hiddenDMIds));
+};
+
+const playUnreadNotification = (): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentUser = useAuthStore.getState().user;
+  if (!currentUser || currentUser.status === "DND") {
+    return;
+  }
+
+  if (!notificationAudio) {
+    notificationAudio = new Audio(NOTIFICATION_SOUND_URL);
+    notificationAudio.preload = "auto";
+  }
+
+  notificationAudio.currentTime = 0;
+  void notificationAudio.play().catch(() => undefined);
+};
+
+const markSocketEventProcessed = (scope: "channel" | "dm", messageId: string): boolean => {
+  const eventKey = `${scope}:${messageId}`;
+  if (processedSocketEventSet.has(eventKey)) {
+    return false;
+  }
+
+  processedSocketEventSet.add(eventKey);
+  processedSocketEventKeys.push(eventKey);
+
+  if (processedSocketEventKeys.length > MAX_PROCESSED_SOCKET_EVENTS) {
+    const oldestKey = processedSocketEventKeys.shift();
+    if (oldestKey) {
+      processedSocketEventSet.delete(oldestKey);
+    }
+  }
+
+  return true;
 };
 
 const persistedUnreads = loadPersistedUnreads();
@@ -311,7 +355,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const socket = getSocket();
     const activeDMId = get().activeDMId;
 
-    set({ mode: "DM", activeChannelId: null, messages: [], channelOpenFocusMessageId: null });
+    set({ mode: "DM", activeChannelId: null, messages: [], channelOpenFocusMessageId: null, unreadDMs: {} });
     persistView(get().activeServerId, null, "DM", activeDMId);
 
     if (activeDMId) {
@@ -407,7 +451,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toggleReaction: async (messageId, emoji) => {
     const { data } = await api.post(`/chat/messages/${messageId}/reactions`, { emoji });
     set((state) => ({
-      messages: state.messages.map((m) => (m.id === messageId ? { ...m, reactions: data.reactions } : m))
+      messages: state.messages.map((m) => (m.id === messageId ? data.message : m))
     }));
   },
   togglePin: async (messageId) => {
@@ -550,6 +594,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on("message:new", (message: Message) => {
+      if (!markSocketEventProcessed("channel", message.id)) {
+        return;
+      }
+
       const active = get().activeChannelId;
       if (message.channelId === active) {
         set((state) => ({
@@ -560,6 +608,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const mentionByNickname = currentUser?.nickname ? message.content.includes(`@${currentUser.nickname}`) : false;
         const mentionByReply = Boolean(currentUser && message.replyTo?.author?.id === currentUser.id && message.authorId !== currentUser.id);
         const isMention = mentionByUsername || mentionByNickname || mentionByReply;
+        playUnreadNotification();
         set((state) => ({
           unreadByChannel: (() => {
             const nextUnread = {
@@ -728,6 +777,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on("dm:message:new", (message: DMMessage) => {
+      if (!markSocketEventProcessed("dm", message.id)) {
+        return;
+      }
+
+      const isViewingDM = get().mode === "DM" && get().activeDMId === message.dmChannelId;
+
       if (get().hiddenDMIds[message.dmChannelId]) {
         set((state) => {
           const nextHidden = { ...state.hiddenDMIds };
@@ -742,7 +797,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       if (currentUser?.id && message.authorId === currentUser.id) {
-        if (get().activeDMId === message.dmChannelId) {
+        if (isViewingDM) {
           set((state) => ({
             dmMessages: state.dmMessages.some((m) => m.id === message.id) ? state.dmMessages : [...state.dmMessages, message]
           }));
@@ -750,11 +805,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return;
       }
 
-      if (get().activeDMId === message.dmChannelId) {
+      if (isViewingDM) {
         set((state) => ({
           dmMessages: state.dmMessages.some((m) => m.id === message.id) ? state.dmMessages : [...state.dmMessages, message]
         }));
       } else {
+        playUnreadNotification();
         set((state) => ({
           unreadDMs: {
             ...state.unreadDMs,
@@ -765,7 +821,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on("dm:message:updated", (message: DMMessage) => {
-      if (get().activeDMId === message.dmChannelId) {
+      if (get().mode === "DM" && get().activeDMId === message.dmChannelId) {
         set((state) => ({
           dmMessages: state.dmMessages.map((m) => (m.id === message.id ? message : m))
         }));
@@ -773,7 +829,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on("dm:message:deleted", ({ id, dmChannelId }: { id: string; dmChannelId: string }) => {
-      if (get().activeDMId === dmChannelId) {
+      if (get().mode === "DM" && get().activeDMId === dmChannelId) {
         set((state) => ({
           dmMessages: state.dmMessages.filter((m) => m.id !== id)
         }));

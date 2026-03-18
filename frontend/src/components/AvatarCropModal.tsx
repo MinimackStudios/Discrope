@@ -1,5 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { applyPalette, GIFEncoder, quantize } from "gifenc";
+import { decompressFrames, parseGIF } from "gifuct-js";
 import { useBackdropClose } from "../lib/useBackdropClose";
 import Cropper from "react-easy-crop";
 
@@ -13,6 +15,7 @@ type Area = {
 type Props = {
   open: boolean;
   imageSrc: string | null;
+  sourceFile?: File | null;
   onClose: () => void;
   onApply: (file: File) => void;
   title?: string;
@@ -28,11 +31,112 @@ const createImage = (url: string): Promise<HTMLImageElement> =>
     image.src = url;
   });
 
+const OUTPUT_SIZE = 512;
+
+const drawCroppedFrame = (source: CanvasImageSource, crop: Area): Uint8ClampedArray => {
+  const canvas = document.createElement("canvas");
+  canvas.width = OUTPUT_SIZE;
+  canvas.height = OUTPUT_SIZE;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Could not create canvas context");
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, 0, canvas.width, canvas.height);
+
+  return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+};
+
+const findTransparentIndex = (palette: number[][]): number => {
+  return palette.findIndex((entry) => entry[3] === 0);
+};
+
+const cloneClampedArray = (source: Uint8ClampedArray): Uint8ClampedArray<ArrayBuffer> => {
+  const clone = new Uint8ClampedArray(source.length);
+  clone.set(source);
+  return clone as Uint8ClampedArray<ArrayBuffer>;
+};
+
+const getCroppedGifFile = async (sourceFile: File, crop: Area, outputFileName: string): Promise<File> => {
+  const arrayBuffer = await sourceFile.arrayBuffer();
+  const parsedGif = parseGIF(arrayBuffer);
+  const frames = decompressFrames(parsedGif, true);
+
+  if (!frames.length) {
+    throw new Error("Failed to read GIF frames");
+  }
+
+  const frameCanvas = document.createElement("canvas");
+  frameCanvas.width = parsedGif.lsd.width;
+  frameCanvas.height = parsedGif.lsd.height;
+
+  const frameCtx = frameCanvas.getContext("2d", { willReadFrequently: true });
+  if (!frameCtx) {
+    throw new Error("Could not create GIF frame context");
+  }
+
+  const gif = GIFEncoder();
+  let previousDisposalType = 0;
+  let previousDims: Area | null = null;
+  let previousRestoreData: ImageData | null = null;
+
+  frames.forEach((frame, index) => {
+    if (previousDims) {
+      if (previousDisposalType === 2) {
+        frameCtx.clearRect(previousDims.x, previousDims.y, previousDims.width, previousDims.height);
+      } else if (previousDisposalType === 3 && previousRestoreData) {
+        frameCtx.putImageData(previousRestoreData, previousDims.x, previousDims.y);
+      }
+    }
+
+    const restoreData =
+      frame.disposalType === 3
+        ? frameCtx.getImageData(frame.dims.left, frame.dims.top, frame.dims.width, frame.dims.height)
+        : null;
+
+    frameCtx.putImageData(new ImageData(cloneClampedArray(frame.patch), frame.dims.width, frame.dims.height), frame.dims.left, frame.dims.top);
+
+    const croppedRgba = drawCroppedFrame(frameCanvas, crop);
+    const palette = quantize(croppedRgba, 256, {
+      format: "rgba4444",
+      oneBitAlpha: true,
+      clearAlpha: true
+    }) as number[][];
+    const transparentIndex = findTransparentIndex(palette);
+    const indexed = applyPalette(croppedRgba, palette, "rgba4444");
+
+    gif.writeFrame(indexed, OUTPUT_SIZE, OUTPUT_SIZE, {
+      palette,
+      transparent: transparentIndex !== -1,
+      transparentIndex: transparentIndex === -1 ? 0 : transparentIndex,
+      delay: Math.max(frame.delay || 0, 20),
+      repeat: index === 0 ? 0 : undefined,
+      dispose: 1
+    });
+
+    previousDisposalType = frame.disposalType;
+    previousDims = {
+      x: frame.dims.left,
+      y: frame.dims.top,
+      width: frame.dims.width,
+      height: frame.dims.height
+    };
+    previousRestoreData = restoreData;
+  });
+
+  gif.finish();
+  return new File([Uint8Array.from(gif.bytes())], outputFileName, { type: "image/gif" });
+};
+
 const getCroppedAvatarFile = async (imageSrc: string, crop: Area, outputFileName: string): Promise<File> => {
   const image = await createImage(imageSrc);
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
+  canvas.width = OUTPUT_SIZE;
+  canvas.height = OUTPUT_SIZE;
 
   const ctx = canvas.getContext("2d");
   if (!ctx) {
@@ -62,6 +166,7 @@ const getCroppedAvatarFile = async (imageSrc: string, crop: Area, outputFileName
 const AvatarCropModal = ({
   open,
   imageSrc,
+  sourceFile = null,
   onClose,
   onApply,
   title = "Edit Image",
@@ -75,6 +180,16 @@ const AvatarCropModal = ({
   const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(onClose);
 
   const image = useMemo(() => imageSrc, [imageSrc]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCropPixels(null);
+    setBusy(false);
+  }, [image, open]);
 
   const onCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
     setCropPixels(croppedAreaPixels);
@@ -92,7 +207,9 @@ const AvatarCropModal = ({
 
     try {
       setBusy(true);
-      const file = await getCroppedAvatarFile(image, cropPixels, outputFileName);
+      const file = sourceFile?.type === "image/gif"
+        ? await getCroppedGifFile(sourceFile, cropPixels, outputFileName)
+        : await getCroppedAvatarFile(image, cropPixels, outputFileName);
       onApply(file);
       onClose();
       reset();

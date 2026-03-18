@@ -8,8 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push --skip-generate",
-    "db:refresh": "prisma migrate reset --force --skip-generate && npm run prisma:push && node scripts/clearUploads.mjs"
+    "prisma:push": "prisma db push",
+    "db:refresh": "prisma migrate reset --force && npm run prisma:push && node scripts/clearUploads.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

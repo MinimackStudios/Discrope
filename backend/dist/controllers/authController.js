@@ -3,13 +3,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.logout = exports.me = exports.login = exports.register = void 0;
+exports.logout = exports.me = exports.regenerateRecoveryCode = exports.resetPasswordWithRecoveryCode = exports.login = exports.register = void 0;
+const node_crypto_1 = __importDefault(require("node:crypto"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prisma_1 = require("../lib/prisma");
+const adminAudit_1 = require("../lib/adminAudit");
 const prismaAny = prisma_1.prisma;
 const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const RESERVED_USERNAME = "deleteduser";
+const PASSWORD_MIN_LENGTH = 8;
+const RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const signToken = (id, username) => {
     return jsonwebtoken_1.default.sign({ id, username }, process.env.JWT_SECRET, {
         expiresIn: (process.env.JWT_EXPIRES_IN ?? "7d")
@@ -18,8 +22,25 @@ const signToken = (id, username) => {
 const cookieOptions = {
     httpOnly: true,
     sameSite: "lax",
-    secure: false,
+    secure: process.env.NODE_ENV === "production",
     maxAge: 7 * 24 * 60 * 60 * 1000
+};
+const generateRecoveryCode = () => {
+    const raw = Array.from({ length: 16 }, () => {
+        const index = node_crypto_1.default.randomInt(0, RECOVERY_CODE_ALPHABET.length);
+        return RECOVERY_CODE_ALPHABET[index];
+    }).join("");
+    return raw.match(/.{1,4}/g)?.join("-") ?? raw;
+};
+const normalizeRecoveryCode = (value) => value.replace(/[^a-z0-9]/gi, "").toUpperCase();
+const issueRecoveryCode = async (userId) => {
+    const recoveryCode = generateRecoveryCode();
+    const recoveryCodeHash = await bcryptjs_1.default.hash(normalizeRecoveryCode(recoveryCode), 10);
+    await prismaAny.user.update({
+        where: { id: userId },
+        data: { recoveryCodeHash }
+    });
+    return recoveryCode;
 };
 const register = async (req, res) => {
     const { username, nickname, password } = req.body;
@@ -33,6 +54,10 @@ const register = async (req, res) => {
         res.status(400).json({ message: "This username is reserved" });
         return;
     }
+    if (password.length < PASSWORD_MIN_LENGTH) {
+        res.status(400).json({ message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long` });
+        return;
+    }
     const existing = await prismaAny.user.findUnique({ where: { username: normalizedUsername } });
     if (existing) {
         res.status(409).json({ message: "Username already taken" });
@@ -43,20 +68,24 @@ const register = async (req, res) => {
         data: { username: normalizedUsername, nickname: normalizedNickname || normalizedUsername, passwordHash },
         select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true }
     });
+    const recoveryCode = await issueRecoveryCode(user.id);
     const token = signToken(user.id, user.username);
     res.cookie("token", token, cookieOptions);
-    res.status(201).json({ user, token });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "USER_REGISTERED",
+        summary: `New user registered: ${user.username}`,
+        actorUserId: user.id,
+        actorUsername: user.username,
+        targetUserId: user.id
+    });
+    res.status(201).json({ user, token, recoveryCode });
 };
 exports.register = register;
 const login = async (req, res) => {
     const { username, password } = req.body;
     const normalizedUsername = username.trim();
     const user = await prismaAny.user.findUnique({ where: { username: normalizedUsername } });
-    if (!user) {
-        res.status(401).json({ message: "Invalid username or password" });
-        return;
-    }
-    if (user.isDeleted) {
+    if (!user || user.isDeleted) {
         res.status(401).json({ message: "Invalid username or password" });
         return;
     }
@@ -83,6 +112,42 @@ const login = async (req, res) => {
     });
 };
 exports.login = login;
+const resetPasswordWithRecoveryCode = async (req, res) => {
+    const { username, recoveryCode, newPassword } = req.body;
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+        res.status(400).json({ message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long` });
+        return;
+    }
+    const normalizedUsername = username.trim();
+    const normalizedRecoveryCode = normalizeRecoveryCode(recoveryCode);
+    const user = await prismaAny.user.findUnique({ where: { username: normalizedUsername } });
+    if (!user || user.isDeleted || !user.recoveryCodeHash) {
+        res.status(401).json({ message: "Invalid username or recovery key" });
+        return;
+    }
+    const validRecoveryCode = await bcryptjs_1.default.compare(normalizedRecoveryCode, user.recoveryCodeHash);
+    if (!validRecoveryCode) {
+        res.status(401).json({ message: "Invalid username or recovery key" });
+        return;
+    }
+    const passwordHash = await bcryptjs_1.default.hash(newPassword, 10);
+    const nextRecoveryCode = await generateRecoveryCode();
+    const nextRecoveryCodeHash = await bcryptjs_1.default.hash(normalizeRecoveryCode(nextRecoveryCode), 10);
+    await prismaAny.user.update({
+        where: { id: user.id },
+        data: {
+            passwordHash,
+            recoveryCodeHash: nextRecoveryCodeHash
+        }
+    });
+    res.json({ message: "Password reset successful", recoveryCode: nextRecoveryCode });
+};
+exports.resetPasswordWithRecoveryCode = resetPasswordWithRecoveryCode;
+const regenerateRecoveryCode = async (req, res) => {
+    const recoveryCode = await issueRecoveryCode(req.user.id);
+    res.json({ recoveryCode });
+};
+exports.regenerateRecoveryCode = regenerateRecoveryCode;
 const me = async (req, res) => {
     const userId = req.user?.id;
     if (!userId) {

@@ -11,6 +11,7 @@ const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
+const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
 const serverRoutes_1 = __importDefault(require("./routes/serverRoutes"));
 const channelRoutes_1 = __importDefault(require("./routes/channelRoutes"));
 const userRoutes_1 = __importDefault(require("./routes/userRoutes"));
@@ -28,7 +29,7 @@ const normalizeOrigin = (value) => {
         return value.replace(/\/$/, "");
     }
 };
-const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? "")
+const allowedOrigins = `${process.env.FRONTEND_ORIGIN ?? ""},${process.env.ADMIN_TOOL_ORIGIN ?? ""}`
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean)
@@ -59,6 +60,7 @@ app.get("/health", (_req, res) => {
     res.json({ ok: true, service: "discrope-backend" });
 });
 app.use("/api/auth", authRoutes_1.default);
+app.use("/api/admin", adminRoutes_1.default);
 app.use("/api/servers", serverRoutes_1.default);
 app.use("/api/chat", channelRoutes_1.default);
 app.use("/api/users", userRoutes_1.default);

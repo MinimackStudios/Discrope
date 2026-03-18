@@ -7,6 +7,7 @@ exports.deleteSelf = exports.removeFriend = exports.rejectFriendRequest = export
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const prisma_1 = require("../lib/prisma");
+const adminAudit_1 = require("../lib/adminAudit");
 const prismaAny = prisma_1.prisma;
 const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const DELETED_USERNAME = "deleteduser";
@@ -60,8 +61,9 @@ const findUsers = async (req, res) => {
 exports.findUsers = findUsers;
 const updateSelf = async (req, res) => {
     const userId = req.user.id;
-    const { username, status } = req.body;
+    const { username, status, removeAvatar } = req.body;
     const avatarUrl = req.file ? `/uploads/avatars/${req.file.filename}` : undefined;
+    const shouldRemoveAvatar = removeAvatar === "true";
     const normalizedUsername = typeof username === "string" ? username.trim() : undefined;
     if (normalizedUsername && !USERNAME_REGEX.test(normalizedUsername)) {
         res.status(400).json({ message: "Username must be 2-32 lowercase letters and numbers only" });
@@ -71,6 +73,11 @@ const updateSelf = async (req, res) => {
         res.status(400).json({ message: "This username is reserved" });
         return;
     }
+    const existingUser = await prismaAny.user.findUnique({
+        where: { id: userId },
+        select: { avatarUrl: true }
+    });
+    const nextAvatarUrl = avatarUrl ?? (shouldRemoveAvatar ? null : undefined);
     const user = await prismaAny.user.update({
         where: { id: userId },
         data: {
@@ -79,10 +86,13 @@ const updateSelf = async (req, res) => {
             ...(status ? { status } : {}),
             ...(typeof req.body.aboutMe === "string" ? { aboutMe: req.body.aboutMe } : {}),
             ...(typeof req.body.customStatus === "string" ? { customStatus: req.body.customStatus } : {}),
-            ...(avatarUrl ? { avatarUrl } : {})
+            ...(nextAvatarUrl !== undefined ? { avatarUrl: nextAvatarUrl } : {})
         },
         select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true }
     });
+    if (existingUser?.avatarUrl && existingUser.avatarUrl !== user.avatarUrl) {
+        deleteLocalFileIfExists(existingUser.avatarUrl);
+    }
     const io = req.app.get("io");
     io.emit("user:updated", {
         id: user.id,
@@ -200,7 +210,7 @@ const removeFriend = async (req, res) => {
 exports.removeFriend = removeFriend;
 const deleteSelf = async (req, res) => {
     const userId = req.user.id;
-    const user = await prismaAny.user.findUnique({ where: { id: userId }, select: { id: true, avatarUrl: true, isDeleted: true } });
+    const user = await prismaAny.user.findUnique({ where: { id: userId }, select: { id: true, username: true, avatarUrl: true, isDeleted: true } });
     if (!user || user.isDeleted) {
         res.status(404).json({ message: "User not found" });
         return;
@@ -217,6 +227,13 @@ const deleteSelf = async (req, res) => {
     for (const server of ownedServers) {
         deleteLocalFileIfExists(server.iconUrl ?? null);
     }
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "USER_DELETED_SELF",
+        summary: `User deleted account: ${user.username}`,
+        actorUserId: user.id,
+        actorUsername: user.username,
+        targetUserId: user.id
+    });
     res.clearCookie("token");
     res.json({ deleted: true });
 };

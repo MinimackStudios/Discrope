@@ -33,6 +33,12 @@ export type MessageReaction = {
   messageId: string;
   userId: string;
   emoji: string;
+  user?: {
+    id: string;
+    username: string;
+    nickname: string;
+    avatarUrl?: string | null;
+  };
 };
 
 export type Message = {

@@ -15,6 +15,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const logout = useAuthStore((s) => s.logout);
+  const regenerateRecoveryCode = useAuthStore((s) => s.regenerateRecoveryCode);
 
   const [username, setUsername] = useState(user?.username ?? "");
   const [nickname, setNickname] = useState(user?.nickname ?? "");
@@ -22,11 +23,17 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
   const [aboutMe, setAboutMe] = useState(user?.aboutMe ?? "");
   const [customStatus, setCustomStatus] = useState(user?.customStatus ?? "");
   const [avatar, setAvatar] = useState<File | null>(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
   const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
   const [avatarEditorSrc, setAvatarEditorSrc] = useState<string | null>(null);
+  const [avatarEditorFile, setAvatarEditorFile] = useState<File | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(onClose);
 
   useEffect(() => {
@@ -35,6 +42,11 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
     setStatus((user?.status as UserStatus) ?? "ONLINE");
     setAboutMe(user?.aboutMe ?? "");
     setCustomStatus(user?.customStatus ?? "");
+    setAvatar(null);
+    setRemoveAvatar(false);
+    setAdvancedOpen(false);
+    setRecoveryCode(null);
+    setRecoveryError(null);
   }, [user?.id, user?.username, user?.nickname, user?.status, user?.aboutMe, user?.customStatus]);
 
   useEffect(() => {
@@ -52,6 +64,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
     formData.append("status", status);
     formData.append("aboutMe", aboutMe);
     formData.append("customStatus", customStatus);
+    formData.append("removeAvatar", removeAvatar ? "true" : "false");
     if (avatar) {
       formData.append("avatar", avatar);
     }
@@ -64,7 +77,9 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
       URL.revokeObjectURL(avatarEditorSrc);
       setAvatarEditorSrc(null);
     }
+    setAvatarEditorFile(null);
     setAvatar(null);
+    setRemoveAvatar(false);
     setSaved(true);
   };
 
@@ -72,12 +87,25 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
     if (!file) {
       return;
     }
+
     if (avatarEditorSrc) {
       URL.revokeObjectURL(avatarEditorSrc);
     }
     const src = URL.createObjectURL(file);
     setAvatarEditorSrc(src);
+    setAvatarEditorFile(file);
+    setRemoveAvatar(false);
     setAvatarEditorOpen(true);
+  };
+
+  const clearAvatarSelection = (): void => {
+    if (avatarEditorSrc) {
+      URL.revokeObjectURL(avatarEditorSrc);
+      setAvatarEditorSrc(null);
+    }
+    setAvatarEditorFile(null);
+    setAvatar(null);
+    setRemoveAvatar(true);
   };
 
   const onDeleteAccount = async (): Promise<void> => {
@@ -87,6 +115,19 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
       await logout();
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const onGenerateRecoveryCode = async (): Promise<void> => {
+    try {
+      setRecoveryBusy(true);
+      setRecoveryError(null);
+      const nextRecoveryCode = await regenerateRecoveryCode();
+      setRecoveryCode(nextRecoveryCode);
+    } catch (error) {
+      setRecoveryError(error instanceof Error ? error.message : "Could not generate a new recovery key.");
+    } finally {
+      setRecoveryBusy(false);
     }
   };
 
@@ -109,7 +150,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
               exit={{ opacity: 0, y: 14, scale: 0.97 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
               onSubmit={onSubmit}
-              className="w-full max-w-md rounded-lg bg-[#2b2d31] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.44)]"
+              className="discord-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-lg bg-[#2b2d31] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.44)]"
               onClick={(e) => e.stopPropagation()}
             >
               <h2 className="text-lg font-semibold">User Settings</h2>
@@ -168,8 +209,70 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
               <label className="mt-3 block text-xs text-discord-muted">
                 Avatar
                 <input className="mt-1 w-full text-sm" type="file" accept="image/*" onChange={(e) => onAvatarPicked(e.target.files?.[0] ?? null)} />
-                {avatar ? <span className="mt-1 block text-[11px]">Edited image ready to upload.</span> : null}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded bg-[#3a3d45] px-2 py-1 text-[11px] text-white hover:bg-[#4a4e59]"
+                    onClick={clearAvatarSelection}
+                  >
+                    Remove Avatar
+                  </button>
+                  {avatar ? <span className="text-[11px]">Edited image ready to upload.</span> : null}
+                  {removeAvatar ? <span className="text-[11px]">Avatar will revert to default on save.</span> : null}
+                </div>
               </label>
+
+              <section className="mt-4 rounded-lg border border-white/10 bg-[#232428] p-3">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between text-left"
+                  onClick={() => setAdvancedOpen((current) => !current)}
+                >
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Advanced</h3>
+                    <p className="mt-1 text-xs leading-5 text-discord-muted">
+                      Sensitive account actions and recovery tools.
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-discord-muted">
+                    {advancedOpen ? "Hide" : "Show"}
+                  </span>
+                </button>
+
+                {advancedOpen ? (
+                  <div className="mt-3 border-t border-white/10 pt-3">
+                    <h4 className="text-sm font-semibold text-white">Recovery Key</h4>
+                    <p className="mt-1 text-xs leading-5 text-discord-muted">
+                      Save a recovery key somewhere safe. You can use it to reset your password if you ever get locked out.
+                    </p>
+                    {recoveryCode ? (
+                      <div className="mt-3 rounded bg-[#111214] px-3 py-2 font-mono text-sm tracking-[0.18em] text-white">
+                        {recoveryCode}
+                      </div>
+                    ) : null}
+                    {recoveryError ? <p className="mt-2 text-xs text-[#ffb3b8]">{recoveryError}</p> : null}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded bg-discord-blurple px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-60"
+                        onClick={() => void onGenerateRecoveryCode()}
+                        disabled={recoveryBusy}
+                      >
+                        {recoveryBusy ? "Generating..." : recoveryCode ? "Generate New Recovery Key" : "Generate Recovery Key"}
+                      </button>
+                      {recoveryCode ? (
+                        <button
+                          type="button"
+                          className="rounded bg-[#3a3d45] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#4a4e59]"
+                          onClick={() => void navigator.clipboard.writeText(recoveryCode)}
+                        >
+                          Copy Key
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
 
               <div className="mt-4 flex items-center justify-between gap-2">
                 <div>
@@ -213,8 +316,10 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
       <AvatarCropModal
         open={avatarEditorOpen}
         imageSrc={avatarEditorSrc}
+        sourceFile={avatarEditorFile}
         onClose={() => setAvatarEditorOpen(false)}
         onApply={(file) => setAvatar(file)}
+        outputFileName={avatarEditorFile?.type === "image/gif" ? "avatar.gif" : "avatar.png"}
       />
     </>
   );
