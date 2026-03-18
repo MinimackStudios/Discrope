@@ -3,11 +3,6 @@ import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 import { prisma } from "../lib/prisma";
 
-type VoiceState = {
-  muted: boolean;
-  deafened: boolean;
-};
-
 const normalizeOrigin = (value: string): string => {
   try {
     return new URL(value).origin;
@@ -38,9 +33,25 @@ export const initSocket = (server: HttpServer): Server => {
     }
   });
 
-  const onlineUsers = new Map<string, string>();
-  const voiceRooms = new Map<string, Set<string>>();
-  const voiceState = new Map<string, VoiceState>();
+  const onlineUsers = new Map<string, Set<string>>();
+  const resolveTypingTarget = (
+    payload: string | { scope?: "CHANNEL" | "DM"; id?: string }
+  ): { id: string; room: string } | null => {
+    if (typeof payload === "string") {
+      return payload ? { id: payload, room: `channel:${payload}` } : null;
+    }
+
+    const id = payload?.id?.trim();
+    if (!id) {
+      return null;
+    }
+
+    const scope = payload.scope === "DM" ? "DM" : "CHANNEL";
+    return {
+      id,
+      room: scope === "DM" ? `dm:${id}` : `channel:${id}`
+    };
+  };
 
   io.use((socket, next) => {
     const token = (socket.handshake.auth?.token as string | undefined) ?? "";
@@ -80,8 +91,19 @@ export const initSocket = (server: HttpServer): Server => {
 
   io.on("connection", (socket) => {
     const user = socket.data.user as { id: string; username: string; nickname: string };
-    onlineUsers.set(user.id, socket.id);
-    io.emit("presence:update", { userId: user.id, status: "ONLINE" });
+    const userSockets = onlineUsers.get(user.id) ?? new Set<string>();
+    const wasOffline = userSockets.size === 0;
+    userSockets.add(socket.id);
+    onlineUsers.set(user.id, userSockets);
+
+    socket.join(`user:${user.id}`);
+
+    if (wasOffline) {
+      io.emit("presence:update", { userId: user.id, status: "ONLINE" });
+      void prisma.user.update({ where: { id: user.id }, data: { status: "ONLINE" } }).catch(() => undefined);
+    }
+
+    socket.emit("presence:sync", { onlineUserIds: Array.from(onlineUsers.keys()) });
 
     socket.on("channel:join", (channelId: string) => {
       socket.join(`channel:${channelId}`);
@@ -99,83 +121,45 @@ export const initSocket = (server: HttpServer): Server => {
       socket.leave(`dm:${dmChannelId}`);
     });
 
-    socket.on("typing:start", (channelId: string) => {
-      socket.to(`channel:${channelId}`).emit("typing:start", {
-        channelId,
-        userId: user.id,
-        username: user.username,
-        nickname: user.nickname
-      });
-    });
-
-    socket.on("typing:stop", (channelId: string) => {
-      socket.to(`channel:${channelId}`).emit("typing:stop", {
-        channelId,
-        userId: user.id,
-        username: user.username,
-        nickname: user.nickname
-      });
-    });
-
-    socket.on("voice:join", ({ channelId }: { channelId: string }) => {
-      socket.join(`voice:${channelId}`);
-      const users = voiceRooms.get(channelId) ?? new Set<string>();
-      users.add(user.id);
-      voiceRooms.set(channelId, users);
-
-      io.to(`voice:${channelId}`).emit("voice:participants", {
-        channelId,
-        userIds: Array.from(users)
-      });
-    });
-
-    socket.on("voice:leave", ({ channelId }: { channelId: string }) => {
-      socket.leave(`voice:${channelId}`);
-      const users = voiceRooms.get(channelId);
-      if (!users) {
+    socket.on("typing:start", (payload: string | { scope?: "CHANNEL" | "DM"; id?: string }) => {
+      const target = resolveTypingTarget(payload);
+      if (!target) {
         return;
       }
 
-      users.delete(user.id);
-      io.to(`voice:${channelId}`).emit("voice:participants", {
-        channelId,
-        userIds: Array.from(users)
+      socket.to(target.room).emit("typing:start", {
+        channelId: target.id,
+        userId: user.id,
+        username: user.username,
+        nickname: user.nickname
       });
     });
 
-    socket.on(
-      "voice:signal",
-      ({ channelId, targetUserId, signal }: { channelId: string; targetUserId: string; signal: unknown }) => {
-        const targetSocketId = onlineUsers.get(targetUserId);
-        if (!targetSocketId) {
-          return;
-        }
-
-        io.to(targetSocketId).emit("voice:signal", {
-          channelId,
-          fromUserId: user.id,
-          signal
-        });
+    socket.on("typing:stop", (payload: string | { scope?: "CHANNEL" | "DM"; id?: string }) => {
+      const target = resolveTypingTarget(payload);
+      if (!target) {
+        return;
       }
-    );
 
-    socket.on("voice:state", ({ muted, deafened }: VoiceState) => {
-      voiceState.set(user.id, { muted, deafened });
-      io.emit("voice:state", { userId: user.id, muted, deafened });
+      socket.to(target.room).emit("typing:stop", {
+        channelId: target.id,
+        userId: user.id,
+        username: user.username,
+        nickname: user.nickname
+      });
     });
 
     socket.on("disconnect", () => {
-      onlineUsers.delete(user.id);
-      for (const [channelId, users] of voiceRooms.entries()) {
-        if (users.delete(user.id)) {
-          io.to(`voice:${channelId}`).emit("voice:participants", {
-            channelId,
-            userIds: Array.from(users)
-          });
+      const userSocketsOnDisconnect = onlineUsers.get(user.id);
+      if (userSocketsOnDisconnect) {
+        userSocketsOnDisconnect.delete(socket.id);
+        if (userSocketsOnDisconnect.size === 0) {
+          onlineUsers.delete(user.id);
+          io.emit("presence:update", { userId: user.id, status: "OFFLINE" });
+          void prisma.user.update({ where: { id: user.id }, data: { status: "OFFLINE" } }).catch(() => undefined);
         }
       }
 
-      io.emit("presence:update", { userId: user.id, status: "OFFLINE" });
     });
   });
 

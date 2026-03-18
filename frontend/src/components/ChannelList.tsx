@@ -1,4 +1,4 @@
-import { ChevronDown, Hash, LogOut, Pencil, Plus, Trash2, Volume2 } from "lucide-react";
+import { ChevronDown, Hash, LogOut, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Channel, ChannelCategory } from "../types";
 
@@ -122,8 +122,8 @@ const ChannelList = ({
                       <button
                         key={channel.id}
                         draggable={canManage}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("channelId", channel.id);
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData("channelId", channel.id);
                         }}
                         onClick={() => onSelectChannel(channel.id)}
                         className={`relative flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[15px] ${
@@ -137,7 +137,7 @@ const ChannelList = ({
                         {!active && hasUnread && !hasMention ? (
                           <span className="absolute -left-2.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-white" />
                         ) : null}
-                        {channel.type === "TEXT" ? <Hash size={16} /> : <Volume2 size={16} />}
+                        <Hash size={16} />
                         <span className="truncate">{channel.name}</span>
                         {canManage ? (
                           <Pencil

@@ -20,7 +20,7 @@ router.use(authMiddleware);
 
 router.get("/search", findUsers);
 router.get("/friends", listFriends);
-router.post("/friends/request", body("username").trim().matches(/^[a-zA-Z0-9]{2,32}$/), validateRequest, sendFriendRequest);
+router.post("/friends/request", body("username").trim().matches(/^[a-z0-9]{2,32}$/), validateRequest, sendFriendRequest);
 router.post("/friends/accept/:requestId", acceptFriendRequest);
 router.post("/friends/reject/:requestId", rejectFriendRequest);
 router.delete("/friends/:friendId", removeFriend);

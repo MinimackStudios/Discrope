@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { api } from "../lib/api";
+import { useBackdropClose } from "../lib/useBackdropClose";
 import { useAuthStore } from "../lib/stores/authStore";
 import type { UserStatus } from "../types";
 import AvatarCropModal from "./AvatarCropModal";
@@ -25,6 +27,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(onClose);
 
   useEffect(() => {
     setUsername(user?.username ?? "");
@@ -39,10 +42,6 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
       setSaved(false);
     }
   }, [open]);
-
-  if (!open || !user) {
-    return null;
-  }
 
   const onSubmit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
@@ -92,102 +91,124 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
-      <form onSubmit={onSubmit} className="w-full max-w-md rounded-lg bg-[#2b2d31] p-4" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold">User Settings</h2>
-        <label className="mt-3 block text-xs text-discord-muted">
-          Username
-          <input
-            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            pattern="[A-Za-z0-9]{2,32}"
-            maxLength={32}
-          />
-          <span className="mt-1 block text-[11px]">Letters and numbers only, no spaces.</span>
-        </label>
-        <label className="mt-3 block text-xs text-discord-muted">
-          Nickname
-          <input
-            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            maxLength={32}
-          />
-        </label>
-        <label className="mt-3 block text-xs text-discord-muted">
-          Status
-          <select
-            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as UserStatus)}
+    <>
+      <AnimatePresence>
+        {open && user ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+            onPointerDown={onBackdropPointerDown}
+            onClick={onBackdropClick}
           >
-            <option value="ONLINE">Online</option>
-            <option value="IDLE">Idle</option>
-            <option value="DND">Do Not Disturb</option>
-            <option value="INVISIBLE">Invisible</option>
-          </select>
-        </label>
-        <label className="mt-3 block text-xs text-discord-muted">
-          Custom Status
-          <input
-            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
-            value={customStatus}
-            onChange={(e) => setCustomStatus(e.target.value)}
-            placeholder="What are you up to?"
-          />
-        </label>
-        <label className="mt-3 block text-xs text-discord-muted">
-          About Me
-          <textarea
-            className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
-            rows={3}
-            value={aboutMe}
-            onChange={(e) => setAboutMe(e.target.value)}
-            placeholder="Tell people about yourself"
-          />
-        </label>
-        <label className="mt-3 block text-xs text-discord-muted">
-          Avatar
-          <input className="mt-1 w-full text-sm" type="file" accept="image/*" onChange={(e) => onAvatarPicked(e.target.files?.[0] ?? null)} />
-          {avatar ? <span className="mt-1 block text-[11px]">Edited image ready to upload.</span> : null}
-        </label>
-
-        <div className="mt-4 flex items-center justify-between gap-2">
-          <div>
-            {!confirmDelete ? (
-              <button
-                type="button"
-                className="rounded bg-[#ed4245] px-3 py-1 text-sm font-semibold text-white hover:bg-[#c0383b]"
-                onClick={() => setConfirmDelete(true)}
-              >
-                Delete Account
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[#ffb3b8]">This is permanent.</span>
-                <button
-                  type="button"
-                  className="rounded bg-[#ed4245] px-3 py-1 text-sm font-semibold text-white hover:bg-[#c0383b] disabled:opacity-60"
-                  onClick={() => void onDeleteAccount()}
-                  disabled={deleting}
+            <motion.form
+              initial={{ opacity: 0, y: 14, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 14, scale: 0.97 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              onSubmit={onSubmit}
+              className="w-full max-w-md rounded-lg bg-[#2b2d31] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.44)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold">User Settings</h2>
+              <label className="mt-3 block text-xs text-discord-muted">
+                Username
+                <input
+                  className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  pattern="[A-Za-z0-9]{2,32}"
+                  maxLength={32}
+                />
+                <span className="mt-1 block text-[11px]">Letters and numbers only, no spaces.</span>
+              </label>
+              <label className="mt-3 block text-xs text-discord-muted">
+                Nickname
+                <input
+                  className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  maxLength={32}
+                />
+              </label>
+              <label className="mt-3 block text-xs text-discord-muted">
+                Status
+                <select
+                  className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as UserStatus)}
                 >
-                  {deleting ? "Deleting..." : "Confirm Delete"}
-                </button>
+                  <option value="ONLINE">Online</option>
+                  <option value="IDLE">Idle</option>
+                  <option value="DND">Do Not Disturb</option>
+                  <option value="INVISIBLE">Invisible</option>
+                </select>
+              </label>
+              <label className="mt-3 block text-xs text-discord-muted">
+                Custom Status
+                <input
+                  className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+                  value={customStatus}
+                  onChange={(e) => setCustomStatus(e.target.value)}
+                  placeholder="What are you up to?"
+                />
+              </label>
+              <label className="mt-3 block text-xs text-discord-muted">
+                About Me
+                <textarea
+                  className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+                  rows={3}
+                  value={aboutMe}
+                  onChange={(e) => setAboutMe(e.target.value)}
+                  placeholder="Tell people about yourself"
+                />
+              </label>
+              <label className="mt-3 block text-xs text-discord-muted">
+                Avatar
+                <input className="mt-1 w-full text-sm" type="file" accept="image/*" onChange={(e) => onAvatarPicked(e.target.files?.[0] ?? null)} />
+                {avatar ? <span className="mt-1 block text-[11px]">Edited image ready to upload.</span> : null}
+              </label>
+
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <div>
+                  {!confirmDelete ? (
+                    <button
+                      type="button"
+                      className="rounded bg-[#ed4245] px-3 py-1 text-sm font-semibold text-white hover:bg-[#c0383b]"
+                      onClick={() => setConfirmDelete(true)}
+                    >
+                      Delete Account
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-[#ffb3b8]">This is permanent.</span>
+                      <button
+                        type="button"
+                        className="rounded bg-[#ed4245] px-3 py-1 text-sm font-semibold text-white hover:bg-[#c0383b] disabled:opacity-60"
+                        onClick={() => void onDeleteAccount()}
+                        disabled={deleting}
+                      >
+                        {deleting ? "Deleting..." : "Confirm Delete"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {saved ? <span className="text-xs text-[#23a55a]">Saved</span> : null}
+                  <button type="button" className="rounded px-3 py-1 text-sm text-discord-muted hover:-translate-y-[1px] hover:text-white" onClick={onClose}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="rounded bg-discord-blurple px-3 py-1 text-sm font-semibold text-white hover:-translate-y-[1px]">
+                    Save
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {saved ? <span className="text-xs text-[#23a55a]">Saved</span> : null}
-            <button type="button" className="rounded px-3 py-1 text-sm text-discord-muted hover:text-white" onClick={onClose}>
-              Cancel
-            </button>
-            <button type="submit" className="rounded bg-discord-blurple px-3 py-1 text-sm font-semibold text-white">
-              Save
-            </button>
-          </div>
-        </div>
-      </form>
+            </motion.form>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <AvatarCropModal
         open={avatarEditorOpen}
@@ -195,7 +216,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
         onClose={() => setAvatarEditorOpen(false)}
         onApply={(file) => setAvatar(file)}
       />
-    </div>
+    </>
   );
 };
 

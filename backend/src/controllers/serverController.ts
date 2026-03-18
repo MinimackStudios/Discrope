@@ -8,7 +8,7 @@ const prismaAny = prisma as any;
 
 const makeInviteCode = (): string => uuid().replace(/-/g, "").slice(0, 8);
 const SYSTEM_USERNAME = "Discrope";
-const SYSTEM_AVATAR_URL = "/system-avatar.svg";
+const SYSTEM_AVATAR_URL = "/disc.png";
 
 const getOrCreateSystemUserId = async (): Promise<string> => {
   const existing = await prismaAny.user.findUnique({
@@ -189,14 +189,38 @@ export const joinByInvite = async (req: Request, res: Response): Promise<void> =
     return;
   }
 
-  await prisma.serverMember.upsert({
-    where: { userId_serverId: { userId, serverId: server.id } },
-    update: {},
-    create: { userId, serverId: server.id }
+  const existingMembership = await prisma.serverMember.findUnique({
+    where: { userId_serverId: { userId, serverId: server.id } }
   });
 
-  const joinedUser = await prismaAny.user.findUnique({ where: { id: userId }, select: { username: true, nickname: true } });
-  await postSystemMessage(server.id, `${joinedUser?.nickname || joinedUser?.username || "A user"} joined the server.`, req.app);
+  if (!existingMembership) {
+    const createdMembership = await prisma.serverMember.create({
+      data: { userId, serverId: server.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            nickname: true,
+            avatarUrl: true,
+            status: true,
+            aboutMe: true,
+            customStatus: true
+          }
+        }
+      }
+    });
+
+    const io = req.app.get("io");
+    io.emit("server:member:joined", {
+      serverId: server.id,
+      member: createdMembership
+    });
+
+    const joinedUser = createdMembership.user;
+    await postSystemMessage(server.id, `${joinedUser.nickname || joinedUser.username || "A user"} joined the server.`, req.app);
+  }
+
   res.json({ joined: true, serverId: server.id });
 };
 
@@ -238,6 +262,9 @@ export const leaveServer = async (req: Request, res: Response): Promise<void> =>
   }
 
   await prisma.serverMember.delete({ where: { userId_serverId: { userId, serverId } } });
+  const io = req.app.get("io");
+  io.emit("server:member:left", { serverId, userId });
+
   const leftUser = await prismaAny.user.findUnique({ where: { id: userId }, select: { username: true, nickname: true } });
   await postSystemMessage(serverId, `${leftUser?.nickname || leftUser?.username || "A user"} left the server.`, req.app);
   res.json({ left: true });
@@ -335,6 +362,9 @@ export const deleteServer = async (req: Request, res: Response): Promise<void> =
   }
 
   await prisma.server.delete({ where: { id: serverId } });
+  const io = req.app.get("io");
+  io.emit("server:deleted", { serverId });
+
   deleteLocalFileIfExists(existing.iconUrl);
   res.json({ deleted: true });
 };
@@ -361,6 +391,9 @@ export const kickMember = async (req: Request, res: Response): Promise<void> => 
   }
 
   await prisma.serverMember.deleteMany({ where: { serverId, userId: memberId } });
+  const io = req.app.get("io");
+  io.emit("server:member:left", { serverId, userId: memberId });
+
   const kickedUser = await prismaAny.user.findUnique({ where: { id: memberId }, select: { username: true, nickname: true } });
   await postSystemMessage(serverId, `${kickedUser?.nickname || kickedUser?.username || "A user"} was kicked from the server.`, req.app);
   res.json({ kicked: true });
@@ -389,6 +422,9 @@ export const banMember = async (req: Request, res: Response): Promise<void> => {
   }
 
   await prisma.serverMember.deleteMany({ where: { serverId, userId: memberId } });
+  const io = req.app.get("io");
+  io.emit("server:member:left", { serverId, userId: memberId });
+
   await prismaAny.serverBan.upsert({
     where: { userId_serverId: { userId: memberId, serverId } },
     update: { reason: reason ?? null },

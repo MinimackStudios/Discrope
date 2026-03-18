@@ -112,10 +112,13 @@ model DMMessage {
   attachmentName String?
   authorId       String
   dmChannelId    String
+  replyToId      String?
   editedAt       DateTime?
   createdAt      DateTime @default(now())
   author         User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   dmChannel      DMChannel @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+  replyTo        DMMessage? @relation("DMMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        DMMessage[] @relation("DMMessageReplies")
 }
 
 model MessageReaction {

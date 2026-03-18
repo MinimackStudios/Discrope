@@ -15,6 +15,7 @@ const serverRoutes_1 = __importDefault(require("./routes/serverRoutes"));
 const channelRoutes_1 = __importDefault(require("./routes/channelRoutes"));
 const userRoutes_1 = __importDefault(require("./routes/userRoutes"));
 const dmRoutes_1 = __importDefault(require("./routes/dmRoutes"));
+const embedRoutes_1 = __importDefault(require("./routes/embedRoutes"));
 const sockets_1 = require("./sockets");
 const app = (0, express_1.default)();
 const server = node_http_1.default.createServer(app);
@@ -60,6 +61,7 @@ app.use("/api/servers", serverRoutes_1.default);
 app.use("/api/chat", channelRoutes_1.default);
 app.use("/api/users", userRoutes_1.default);
 app.use("/api/dms", dmRoutes_1.default);
+app.use("/api/embeds", embedRoutes_1.default);
 app.use((err, _req, res, _next) => {
     res.status(500).json({ message: err.message || "Internal server error" });
 });

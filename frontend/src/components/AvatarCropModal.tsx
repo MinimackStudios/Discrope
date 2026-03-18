@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useBackdropClose } from "../lib/useBackdropClose";
 import Cropper from "react-easy-crop";
 
 type Area = {
@@ -70,6 +72,7 @@ const AvatarCropModal = ({
   const [zoom, setZoom] = useState(1);
   const [cropPixels, setCropPixels] = useState<Area | null>(null);
   const [busy, setBusy] = useState(false);
+  const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(onClose);
 
   const image = useMemo(() => imageSrc, [imageSrc]);
 
@@ -77,17 +80,13 @@ const AvatarCropModal = ({
     setCropPixels(croppedAreaPixels);
   }, []);
 
-  if (!open || !image) {
-    return null;
-  }
-
   const reset = (): void => {
     setCrop({ x: 0, y: 0 });
     setZoom(1);
   };
 
   const apply = async (): Promise<void> => {
-    if (!cropPixels) {
+    if (!cropPixels || !image) {
       return;
     }
 
@@ -103,8 +102,25 @@ const AvatarCropModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 p-4" onClick={onClose}>
-      <section className="w-full max-w-lg rounded-lg bg-[#2b2d31] p-4" onClick={(event) => event.stopPropagation()}>
+    <AnimatePresence>
+      {open && image ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.16, ease: "easeOut" }}
+          className="fixed inset-0 z-[80] grid place-items-center bg-black/70 p-4"
+          onPointerDown={onBackdropPointerDown}
+          onClick={onBackdropClick}
+        >
+          <motion.section
+            initial={{ opacity: 0, y: 14, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 14, scale: 0.97 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="w-full max-w-lg rounded-lg bg-[#2b2d31] p-4"
+            onClick={(event) => event.stopPropagation()}
+          >
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-white">{title}</h3>
           <button className="text-sm text-discord-muted hover:text-white" onClick={onClose} aria-label="Close">
@@ -157,8 +173,10 @@ const AvatarCropModal = ({
             </button>
           </div>
         </div>
-      </section>
-    </div>
+          </motion.section>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 };
 

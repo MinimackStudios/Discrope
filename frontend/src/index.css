@@ -8,14 +8,46 @@
 
 body {
   margin: 0;
-  font-family: "gg sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Noto Sans Variable", "Noto Sans", sans-serif;
+  font-weight: 400;
   background: #1e1f22;
   color: #dbdee1;
   overflow: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.font-bold {
+  font-weight: 700;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  background: #1e1f22;
+}
+
+::selection {
+  background: rgba(88, 101, 242, 0.35);
+  color: #ffffff;
 }
 
 .discord-scrollbar::-webkit-scrollbar {
@@ -33,6 +65,7 @@ body {
 
 .message-markdown p {
   margin: 0;
+  display: inline;
 }
 
 .mention {

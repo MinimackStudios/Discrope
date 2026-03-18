@@ -1,7 +1,24 @@
 import type { Request, Response } from "express";
+import fs from "node:fs";
+import path from "node:path";
 import { prisma } from "../lib/prisma";
 
 const prismaAny = prisma as any;
+
+const normalizeChannelName = (value: string): string => {
+  return value.trim().replace(/\s+/g, "-").toLowerCase();
+};
+
+const deleteAttachmentIfLocal = (attachmentUrl?: string | null): void => {
+  if (!attachmentUrl || !attachmentUrl.startsWith("/uploads/")) {
+    return;
+  }
+
+  const filePath = path.resolve(process.cwd(), attachmentUrl.slice(1));
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+};
 
 const getServerRoleForChannel = async (
   channelId: string,
@@ -61,9 +78,15 @@ export const createChannel = async (req: Request, res: Response): Promise<void> 
   const { serverId } = req.params;
   const { name, type, categoryId } = req.body as {
     name: string;
-    type: "TEXT" | "VOICE";
+    type: "TEXT";
     categoryId?: string;
   };
+  const normalizedName = normalizeChannelName(name);
+
+  if (normalizedName.length === 0) {
+    res.status(400).json({ message: "Channel name cannot be empty" });
+    return;
+  }
 
   const member = await prisma.serverMember.findUnique({ where: { userId_serverId: { userId: req.user!.id, serverId } } });
   const server = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
@@ -72,10 +95,22 @@ export const createChannel = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
+  const duplicate = await prisma.channel.findFirst({
+    where: {
+      serverId,
+      name: normalizedName
+    },
+    select: { id: true }
+  });
+  if (duplicate) {
+    res.status(409).json({ message: "A channel with that name already exists in this server" });
+    return;
+  }
+
   const channel = await prisma.channel.create({
     data: {
       serverId,
-      name,
+      name: normalizedName,
       type,
       categoryId: categoryId ?? null
     }
@@ -89,7 +124,7 @@ export const listMessages = async (req: Request, res: Response): Promise<void> =
   const messages = await prisma.message.findMany({
     where: { channelId },
     include: {
-      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } },
+      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
       reactions: true,
       replyTo: {
         select: {
@@ -129,7 +164,7 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
       attachmentName
     },
     include: {
-      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } },
+      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
       reactions: true,
       replyTo: {
         select: {
@@ -167,7 +202,7 @@ export const editMessage = async (req: Request, res: Response): Promise<void> =>
     where: { id: messageId },
     data: { content, editedAt: new Date() },
     include: {
-      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } },
+      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
       reactions: true
     }
   });
@@ -193,7 +228,9 @@ export const deleteMessage = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
+  const attachmentUrl = existing.attachmentUrl;
   await prisma.message.delete({ where: { id: messageId } });
+  deleteAttachmentIfLocal(attachmentUrl);
   const io = req.app.get("io");
   io.to(`channel:${existing.channelId}`).emit("message:deleted", { id: messageId });
   res.json({ deleted: true });
@@ -315,10 +352,26 @@ export const updateChannel = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const normalizedName = typeof name === "string" ? name.trim() : undefined;
+  const normalizedName = typeof name === "string" ? normalizeChannelName(name) : undefined;
   if (normalizedName !== undefined && normalizedName.length === 0) {
     res.status(400).json({ message: "Channel name cannot be empty" });
     return;
+  }
+
+  if (normalizedName !== undefined) {
+    const duplicate = await prisma.channel.findFirst({
+      where: {
+        serverId: channel.serverId,
+        name: normalizedName,
+        id: { not: channelId }
+      },
+      select: { id: true }
+    });
+
+    if (duplicate) {
+      res.status(409).json({ message: "A channel with that name already exists in this server" });
+      return;
+    }
   }
 
   const hasCategoryId = Object.prototype.hasOwnProperty.call(req.body, "categoryId");
@@ -330,5 +383,9 @@ export const updateChannel = async (req: Request, res: Response): Promise<void> 
       ...(normalizedName !== undefined ? { name: normalizedName } : {})
     }
   });
+
+  const io = req.app.get("io");
+  io.emit("channel:updated", { channel: updated });
+
   res.json({ channel: updated });
 };

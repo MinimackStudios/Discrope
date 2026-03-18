@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const express_validator_1 = require("express-validator");
+const embedController_1 = require("../controllers/embedController");
+const auth_1 = require("../middleware/auth");
+const validate_1 = require("../middleware/validate");
+const router = (0, express_1.Router)();
+router.use(auth_1.authMiddleware);
+router.get("/", (0, express_validator_1.query)("url").isURL({ protocols: ["http", "https"], require_protocol: true }), validate_1.validateRequest, embedController_1.previewEmbed);
+exports.default = router;

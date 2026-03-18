@@ -9,9 +9,10 @@ export type User = {
   status: UserStatus;
   aboutMe?: string;
   customStatus?: string;
+  createdAt?: string;
 };
 
-export type ChannelType = "TEXT" | "VOICE";
+export type ChannelType = "TEXT";
 
 export type ChannelCategory = {
   id: string;
@@ -58,6 +59,7 @@ export type ServerMember = {
   serverId: string;
   nickname?: string | null;
   role: "MEMBER" | "ADMIN";
+  createdAt?: string;
   user: User;
 };
 
@@ -86,5 +88,22 @@ export type DMMessage = {
   authorId: string;
   editedAt?: string | null;
   createdAt: string;
+  replyTo?: {
+    id: string;
+    content: string;
+    author: { id: string; username: string; nickname?: string; isDeleted?: boolean; avatarUrl?: string | null };
+  } | null;
   author: User;
+};
+
+export type LinkEmbed = {
+  url: string;
+  resolvedUrl: string;
+  providerHost: string;
+  siteName?: string | null;
+  title?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+  faviconUrl?: string | null;
+  color?: string | null;
 };

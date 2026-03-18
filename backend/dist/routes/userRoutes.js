@@ -10,7 +10,7 @@ const router = (0, express_1.Router)();
 router.use(auth_1.authMiddleware);
 router.get("/search", userController_1.findUsers);
 router.get("/friends", userController_1.listFriends);
-router.post("/friends/request", (0, express_validator_1.body)("username").trim().matches(/^[a-zA-Z0-9]{2,32}$/), validate_1.validateRequest, userController_1.sendFriendRequest);
+router.post("/friends/request", (0, express_validator_1.body)("username").trim().matches(/^[a-z0-9]{2,32}$/), validate_1.validateRequest, userController_1.sendFriendRequest);
 router.post("/friends/accept/:requestId", userController_1.acceptFriendRequest);
 router.post("/friends/reject/:requestId", userController_1.rejectFriendRequest);
 router.delete("/friends/:friendId", userController_1.removeFriend);

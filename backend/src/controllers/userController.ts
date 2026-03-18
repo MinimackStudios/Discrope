@@ -4,7 +4,7 @@ import path from "node:path";
 import { prisma } from "../lib/prisma";
 
 const prismaAny = prisma as any;
-const USERNAME_REGEX = /^[a-zA-Z0-9]{2,32}$/;
+const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const DELETED_USERNAME = "deleteduser";
 const SYSTEM_USERNAME = "Discrope";
 
@@ -55,7 +55,7 @@ export const findUsers = async (req: Request, res: Response): Promise<void> => {
 
   const users = await prismaAny.user.findMany({
     where: { username: { contains: q }, isDeleted: false },
-    select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true },
+    select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true },
     take: 10
   });
 
@@ -74,7 +74,7 @@ export const updateSelf = async (req: Request, res: Response): Promise<void> => 
   const avatarUrl = req.file ? `/uploads/avatars/${req.file.filename}` : undefined;
   const normalizedUsername = typeof username === "string" ? username.trim() : undefined;
   if (normalizedUsername && !USERNAME_REGEX.test(normalizedUsername)) {
-    res.status(400).json({ message: "Username must be 2-32 letters and numbers only" });
+    res.status(400).json({ message: "Username must be 2-32 lowercase letters and numbers only" });
     return;
   }
   if (normalizedUsername && normalizedUsername.toLowerCase() === DELETED_USERNAME) {
@@ -118,8 +118,8 @@ export const listFriends = async (req: Request, res: Response): Promise<void> =>
       OR: [{ fromId: userId }, { toId: userId }]
     },
     include: {
-      from: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } },
-      to: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } }
+      from: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+      to: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } }
     }
   });
 
@@ -127,10 +127,19 @@ export const listFriends = async (req: Request, res: Response): Promise<void> =>
 
   const pending = await prismaAny.friendRequest.findMany({
     where: { toId: userId, status: "PENDING" },
-    include: { from: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } } }
+    include: { from: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
   });
 
-  res.json({ friends, pending });
+  const pendingOutgoing = await prismaAny.friendRequest.findMany({
+    where: { fromId: userId, status: "PENDING" },
+    include: { to: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
+  });
+
+  res.json({
+    friends,
+    pending,
+    pendingOutgoing: (pendingOutgoing as any[]).map((request) => request.to)
+  });
 };
 
 export const sendFriendRequest = async (req: Request, res: Response): Promise<void> => {

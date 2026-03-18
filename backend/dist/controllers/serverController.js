@@ -11,7 +11,7 @@ const prisma_1 = require("../lib/prisma");
 const prismaAny = prisma_1.prisma;
 const makeInviteCode = () => (0, uuid_1.v4)().replace(/-/g, "").slice(0, 8);
 const SYSTEM_USERNAME = "Discrope";
-const SYSTEM_AVATAR_URL = "/system-avatar.svg";
+const SYSTEM_AVATAR_URL = "/disc.png";
 const getOrCreateSystemUserId = async () => {
     const existing = await prismaAny.user.findUnique({
         where: { username: SYSTEM_USERNAME },
@@ -172,13 +172,34 @@ const joinByInvite = async (req, res) => {
         res.status(403).json({ message: "You are banned from this server" });
         return;
     }
-    await prisma_1.prisma.serverMember.upsert({
-        where: { userId_serverId: { userId, serverId: server.id } },
-        update: {},
-        create: { userId, serverId: server.id }
+    const existingMembership = await prisma_1.prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId: server.id } }
     });
-    const joinedUser = await prismaAny.user.findUnique({ where: { id: userId }, select: { username: true, nickname: true } });
-    await postSystemMessage(server.id, `${joinedUser?.nickname || joinedUser?.username || "A user"} joined the server.`, req.app);
+    if (!existingMembership) {
+        const createdMembership = await prisma_1.prisma.serverMember.create({
+            data: { userId, serverId: server.id },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        username: true,
+                        nickname: true,
+                        avatarUrl: true,
+                        status: true,
+                        aboutMe: true,
+                        customStatus: true
+                    }
+                }
+            }
+        });
+        const io = req.app.get("io");
+        io.emit("server:member:joined", {
+            serverId: server.id,
+            member: createdMembership
+        });
+        const joinedUser = createdMembership.user;
+        await postSystemMessage(server.id, `${joinedUser.nickname || joinedUser.username || "A user"} joined the server.`, req.app);
+    }
     res.json({ joined: true, serverId: server.id });
 };
 exports.joinByInvite = joinByInvite;
@@ -216,6 +237,8 @@ const leaveServer = async (req, res) => {
         return;
     }
     await prisma_1.prisma.serverMember.delete({ where: { userId_serverId: { userId, serverId } } });
+    const io = req.app.get("io");
+    io.emit("server:member:left", { serverId, userId });
     const leftUser = await prismaAny.user.findUnique({ where: { id: userId }, select: { username: true, nickname: true } });
     await postSystemMessage(serverId, `${leftUser?.nickname || leftUser?.username || "A user"} left the server.`, req.app);
     res.json({ left: true });
@@ -300,6 +323,8 @@ const deleteServer = async (req, res) => {
         return;
     }
     await prisma_1.prisma.server.delete({ where: { id: serverId } });
+    const io = req.app.get("io");
+    io.emit("server:deleted", { serverId });
     deleteLocalFileIfExists(existing.iconUrl);
     res.json({ deleted: true });
 };
@@ -322,6 +347,8 @@ const kickMember = async (req, res) => {
         return;
     }
     await prisma_1.prisma.serverMember.deleteMany({ where: { serverId, userId: memberId } });
+    const io = req.app.get("io");
+    io.emit("server:member:left", { serverId, userId: memberId });
     const kickedUser = await prismaAny.user.findUnique({ where: { id: memberId }, select: { username: true, nickname: true } });
     await postSystemMessage(serverId, `${kickedUser?.nickname || kickedUser?.username || "A user"} was kicked from the server.`, req.app);
     res.json({ kicked: true });
@@ -346,6 +373,8 @@ const banMember = async (req, res) => {
         return;
     }
     await prisma_1.prisma.serverMember.deleteMany({ where: { serverId, userId: memberId } });
+    const io = req.app.get("io");
+    io.emit("server:member:left", { serverId, userId: memberId });
     await prismaAny.serverBan.upsert({
         where: { userId_serverId: { userId: memberId, serverId } },
         update: { reason: reason ?? null },

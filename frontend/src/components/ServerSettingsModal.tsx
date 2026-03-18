@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { api } from "../lib/api";
+import { useBackdropClose } from "../lib/useBackdropClose";
 import type { Server, ServerMember } from "../types";
 import AvatarCropModal from "./AvatarCropModal";
 import StatusDot from "./StatusDot";
@@ -36,6 +38,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
   const [iconEditorSrc, setIconEditorSrc] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("general");
   const [bans, setBans] = useState<BannedUser[]>([]);
+  const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(onClose);
 
   useEffect(() => {
     setName(server?.name ?? "");
@@ -52,12 +55,11 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
     }
   }, [open, tab, server?.id]);
 
-  if (!open || !server || !isOwner) {
-    return null;
-  }
-
   const save = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
+    if (!server) {
+      return;
+    }
     const formData = new FormData();
     formData.append("name", name || server.name);
     formData.append("removeIcon", removeIcon ? "true" : "false");
@@ -85,15 +87,35 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
   };
 
   const unban = async (userId: string): Promise<void> => {
+    if (!server) {
+      return;
+    }
     await api.delete(`/servers/${server.id}/bans/${userId}`);
     setBans((prev) => prev.filter((b) => b.userId !== userId));
   };
 
-  const members = (server.members ?? []) as ServerMember[];
+  const members = (server?.members ?? []) as ServerMember[];
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-lg bg-[#2b2d31]" onClick={(e) => e.stopPropagation()}>
+    <AnimatePresence>
+      {open && server && isOwner ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.16, ease: "easeOut" }}
+          className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+          onPointerDown={onBackdropPointerDown}
+          onClick={onBackdropClick}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 14, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 14, scale: 0.97 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="w-full max-w-lg rounded-lg bg-[#2b2d31]"
+            onClick={(e) => e.stopPropagation()}
+          >
         <div className="flex border-b border-black/20">
           {(["general", "members", "bans"] as Tab[]).map((t) => (
             <button
@@ -244,8 +266,10 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
             setRemoveIcon(false);
           }}
         />
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 };
 

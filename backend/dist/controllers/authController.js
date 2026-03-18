@@ -8,7 +8,7 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prisma_1 = require("../lib/prisma");
 const prismaAny = prisma_1.prisma;
-const USERNAME_REGEX = /^[a-zA-Z0-9]{2,32}$/;
+const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const RESERVED_USERNAME = "deleteduser";
 const signToken = (id, username) => {
     return jsonwebtoken_1.default.sign({ id, username }, process.env.JWT_SECRET, {
@@ -26,7 +26,7 @@ const register = async (req, res) => {
     const normalizedUsername = username.trim();
     const normalizedNickname = (nickname ?? "").trim();
     if (!USERNAME_REGEX.test(normalizedUsername)) {
-        res.status(400).json({ message: "Username must be 2-32 letters and numbers only" });
+        res.status(400).json({ message: "Username must be 2-32 lowercase letters and numbers only" });
         return;
     }
     if (normalizedUsername.toLowerCase() === RESERVED_USERNAME) {
@@ -100,7 +100,13 @@ const me = async (req, res) => {
     res.json({ user });
 };
 exports.me = me;
-const logout = async (_req, res) => {
+const logout = async (req, res) => {
+    const userId = req.user?.id;
+    if (userId) {
+        await prismaAny.user.update({ where: { id: userId }, data: { status: "OFFLINE" } }).catch(() => undefined);
+        const io = req.app.get("io");
+        io?.emit("presence:update", { userId, status: "OFFLINE" });
+    }
     res.clearCookie("token");
     res.json({ ok: true });
 };

@@ -26,8 +26,8 @@ router.post("/servers/:serverId/categories", body("name").isLength({ min: 1, max
 router.delete("/categories/:categoryId", deleteCategory);
 router.post(
   "/servers/:serverId/channels",
-  body("name").isLength({ min: 1, max: 64 }),
-  body("type").isIn(["TEXT", "VOICE"]),
+  body("name").trim().isLength({ min: 1, max: 64 }),
+  body("type").isIn(["TEXT"]),
   validateRequest,
   createChannel
 );

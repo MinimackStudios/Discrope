@@ -10,7 +10,7 @@ router.post(
   "/register",
   body("username")
     .trim()
-    .matches(/^[a-zA-Z0-9]{2,32}$/)
+    .matches(/^[a-z0-9]{2,32}$/)
     .custom((value) => value.toLowerCase() !== "deleteduser"),
   body("nickname").optional().trim().isLength({ min: 1, max: 32 }),
   body("password").isLength({ min: 6, max: 128 }),
@@ -20,7 +20,7 @@ router.post(
 
 router.post(
   "/login",
-  body("username").trim().matches(/^[a-zA-Z0-9]{2,32}$/),
+  body("username").trim().matches(/^[a-z0-9]{2,32}$/),
   body("password").isLength({ min: 6, max: 128 }),
   validateRequest,
   login

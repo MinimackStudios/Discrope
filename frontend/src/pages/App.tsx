@@ -4,12 +4,12 @@ import ServerBar from "../components/ServerBar";
 import ChannelList from "../components/ChannelList";
 import ChatArea from "../components/ChatArea";
 import MemberList from "../components/MemberList";
-import VoicePanel from "../components/VoicePanel";
 import UserBar from "../components/UserBar";
 import SettingsModal from "../components/SettingsModal";
 import CreateServerModal from "../components/CreateServerModal";
 import CreateChannelModal from "../components/CreateChannelModal";
 import DMList from "../components/DMList";
+import DMProfilePanel from "../components/DMProfilePanel";
 import FriendsPanel from "../components/FriendsPanel";
 import ServerSettingsModal from "../components/ServerSettingsModal";
 import UserProfileModal from "../components/UserProfileModal";
@@ -17,7 +17,6 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import InputDialog from "../components/InputDialog";
 import { useAuthStore } from "../lib/stores/authStore";
 import { useChatStore } from "../lib/stores/chatStore";
-import { getSocket } from "../lib/socket";
 import { api } from "../lib/api";
 import type { User } from "../types";
 
@@ -36,16 +35,20 @@ const MainPage = (): JSX.Element => {
     dms,
     friends,
     pendingFriends,
+    outgoingPendingFriends,
     typingByChannel,
+    channelOpenFocusMessageId,
     unreadByChannel,
     mentionUnreadByChannel,
     unreadDMs,
+    hiddenDMIds,
     loadServers,
     loadFriends,
     loadDMs,
     setActiveServer,
     setActiveChannel,
     setActiveDM,
+    openHome,
     sendFriendRequest,
     acceptFriendRequest,
     rejectFriendRequest,
@@ -55,11 +58,10 @@ const MainPage = (): JSX.Element => {
     deleteServer,
     regenerateInvite,
     markDMRead,
+    hideDM,
     bindSocketEvents
   } = useChatStore();
 
-  const [muted, setMuted] = useState(false);
-  const [deafened, setDeafened] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createServerOpen, setCreateServerOpen] = useState(false);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
@@ -92,8 +94,51 @@ const MainPage = (): JSX.Element => {
   );
   const activeChannel = activeServer?.channels.find((channel) => channel.id === activeChannelId) ?? null;
   const activeDM = dms.find((dm) => dm.id === activeDMId) ?? null;
+  const visibleDMs = useMemo(() => dms.filter((dm) => !hiddenDMIds[dm.id]), [dms, hiddenDMIds]);
+  const homeActive = mode === "DM";
+  const activeDMUser = activeDM?.participants.find((p) => p.id !== user?.id) ?? null;
   const isServerOwner = activeServer?.ownerId === user?.id;
   const hasServers = servers.length > 0;
+
+  const liveProfileUser = useMemo(() => {
+    if (!profileUser) {
+      return null;
+    }
+
+    const latestFromAuth = user && user.id === profileUser.id ? user : null;
+    if (latestFromAuth) {
+      return { ...profileUser, ...latestFromAuth };
+    }
+
+    const latestFromServer = servers
+      .flatMap((server) => server.members.map((member) => member.user))
+      .find((memberUser) => memberUser.id === profileUser.id);
+    if (latestFromServer) {
+      return { ...profileUser, ...latestFromServer };
+    }
+
+    const latestFromFriends = friends.find((friend) => friend.id === profileUser.id);
+    if (latestFromFriends) {
+      return { ...profileUser, ...latestFromFriends };
+    }
+
+    const latestFromDMs = dms
+      .flatMap((dm) => dm.participants)
+      .find((participant) => participant.id === profileUser.id);
+    if (latestFromDMs) {
+      return { ...profileUser, ...latestFromDMs };
+    }
+
+    return profileUser;
+  }, [profileUser, user, servers, friends, dms]);
+
+  const activeProfileServerMemberSince = useMemo(() => {
+    if (mode !== "SERVER" || !liveProfileUser || !activeServer) {
+      return null;
+    }
+
+    return activeServer.members.find((member) => member.userId === liveProfileUser.id)?.createdAt ?? null;
+  }, [mode, liveProfileUser, activeServer]);
 
   const unreadServerIds = useMemo(() => {
     const ids = new Set<string>();
@@ -178,9 +223,20 @@ const MainPage = (): JSX.Element => {
           setInputState((state) => ({ ...state, open: false }));
           return;
         }
-        await api.post(`/servers/invite/${code}`);
-        await loadServers();
-        setInputState((state) => ({ ...state, open: false }));
+
+        try {
+          await api.post(`/servers/invite/${code}`);
+          await loadServers();
+          setInputState((state) => ({ ...state, open: false }));
+        } catch (error: unknown) {
+          const status = (error as { response?: { status?: number } })?.response?.status;
+          const backendMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+          const message = status === 403 ? (backendMessage ?? "You are banned from this server.") : (backendMessage ?? "Failed to join server.");
+          setInputState((state) => ({
+            ...state,
+            message
+          }));
+        }
       }
     });
   };
@@ -279,22 +335,18 @@ const MainPage = (): JSX.Element => {
     });
   };
 
-  const updateVoiceState = (nextMuted: boolean, nextDeafened: boolean): void => {
-    setMuted(nextMuted);
-    setDeafened(nextDeafened);
-    getSocket()?.emit("voice:state", { muted: nextMuted, deafened: nextDeafened });
-  };
-
   return (
     <main className="flex h-screen w-screen bg-discord-dark5 text-discord-text">
       <ServerBar
         servers={servers}
+        homeActive={homeActive}
         activeServerId={activeServerId}
         unreadServerIds={unreadServerIds}
         mentionServerIds={mentionServerIds}
         dms={dms}
         me={user}
         unreadDMs={unreadDMs}
+        onSelectHome={() => void openHome()}
         onSelectDM={(id) => void setActiveDM(id)}
         onSelect={(id) => void setActiveServer(id)}
         onCreateServer={() => setCreateServerOpen(true)}
@@ -306,11 +358,16 @@ const MainPage = (): JSX.Element => {
         <div className="flex h-full w-60 flex-col">
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex gap-1 border-b border-black/20 bg-[#232428] p-2">
-              <button className="flex-1 rounded bg-[#313338] px-2 py-1 text-xs hover:bg-[#3a3d45]" onClick={() => setFriendsOpen(true)}>
+              <button className="relative flex-1 rounded bg-[#313338] px-2 py-1 text-xs hover:bg-[#3a3d45]" onClick={() => setFriendsOpen(true)}>
                 <UserPlus size={12} className="mr-1 inline" />
                 Friends
+                {pendingFriends.length > 0 ? (
+                  <span className="absolute -right-1 -top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[#ed4245] px-1 text-[10px] font-semibold text-white">
+                    {Math.min(pendingFriends.length, 99)}
+                  </span>
+                ) : null}
               </button>
-              {isServerOwner ? (
+              {mode === "SERVER" && activeServer && isServerOwner ? (
                 <button
                   className="rounded bg-[#313338] px-2 py-1 text-xs hover:bg-[#3a3d45]"
                   onClick={() => setServerSettingsOpen(true)}
@@ -321,7 +378,17 @@ const MainPage = (): JSX.Element => {
               ) : null}
             </div>
 
-            {hasServers ? (
+            {homeActive ? (
+              <DMList
+                dms={visibleDMs}
+                me={user}
+                activeDMId={activeDMId}
+                onOpenDM={(id) => void setActiveDM(id)}
+                onRemoveDM={(id) => hideDM(id)}
+                unreadDMs={unreadDMs}
+                fullHeight
+              />
+            ) : hasServers ? (
               <ChannelList
                 serverName={activeServer?.name ?? ""}
                 categories={activeServer?.categories ?? []}
@@ -343,20 +410,8 @@ const MainPage = (): JSX.Element => {
             )}
           </div>
 
-          <DMList
-            dms={dms}
-            me={user}
-            activeDMId={activeDMId}
-            onOpenDM={(id) => void setActiveDM(id)}
-            unreadDMs={unreadDMs}
-          />
-          <VoicePanel me={user} channels={activeServer?.channels ?? []} />
           <UserBar
             user={user}
-            muted={muted}
-            deafened={deafened}
-            onToggleMute={() => updateVoiceState(!muted, deafened)}
-            onToggleDeafen={() => updateVoiceState(muted, !deafened)}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenOwnProfile={() => setProfileUser(user)}
           />
@@ -366,13 +421,19 @@ const MainPage = (): JSX.Element => {
           <div className="flex flex-1 items-center justify-center text-discord-muted">
             <p className="text-sm">Select or join a server to get started</p>
           </div>
+        ) : mode === "DM" && !activeDM ? (
+          <div className="flex flex-1 items-center justify-center text-discord-muted">
+            <p className="text-sm">Select a direct message to start chatting</p>
+          </div>
         ) : (
           <ChatArea
+            key={`${mode}:${mode === "SERVER" ? (activeChannelId ?? "none") : (activeDMId ?? "none")}`}
             me={user}
             mode={mode}
             channelName={mode === "SERVER" ? activeChannel?.name ?? "general" : activeDMName}
             messages={mode === "SERVER" ? messages : dmMessages}
-            typingUsers={typingByChannel[activeChannelId ?? ""] ?? []}
+            focusMessageId={mode === "SERVER" ? channelOpenFocusMessageId : null}
+            typingUsers={(typingByChannel[mode === "SERVER" ? (activeChannelId ?? "") : (activeDMId ?? "")] ?? []).map((entry) => entry.displayName)}
             mentionMembers={activeServer?.members ?? []}
             onOpenProfile={setProfileUser}
             canModerateServerMessages={Boolean(isServerOwner)}
@@ -381,15 +442,19 @@ const MainPage = (): JSX.Element => {
           />
         )}
 
-        <MemberList
-          members={activeServer?.members ?? []}
-          onSelectUser={setProfileUser}
-          canModerate={Boolean(isServerOwner)}
-          currentUserId={user.id}
-          ownerId={activeServer?.ownerId}
-          onKick={(memberId) => kickMember(memberId)}
-          onBan={(memberId) => banMember(memberId)}
-        />
+        {homeActive ? (
+          <DMProfilePanel user={activeDMUser} />
+        ) : (
+          <MemberList
+            members={activeServer?.members ?? []}
+            onSelectUser={setProfileUser}
+            canModerate={Boolean(isServerOwner)}
+            currentUserId={user.id}
+            ownerId={activeServer?.ownerId}
+            onKick={(memberId) => kickMember(memberId)}
+            onBan={(memberId) => banMember(memberId)}
+          />
+        )}
       </div>
 
       {commandOpen ? (
@@ -499,10 +564,13 @@ const MainPage = (): JSX.Element => {
       />
 
       <UserProfileModal
-        open={Boolean(profileUser)}
-        user={profileUser}
+        open={Boolean(liveProfileUser)}
+        user={liveProfileUser}
+        serverName={mode === "SERVER" ? (activeServer?.name ?? null) : null}
+        serverMemberSince={activeProfileServerMemberSince}
         me={user}
         friends={friends}
+        outgoingPendingFriends={outgoingPendingFriends}
         onClose={() => setProfileUser(null)}
         onAddFriend={sendFriendRequest}
         onStartDM={async (userId) => {

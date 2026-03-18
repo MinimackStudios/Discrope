@@ -10,6 +10,7 @@ import serverRoutes from "./routes/serverRoutes";
 import channelRoutes from "./routes/channelRoutes";
 import userRoutes from "./routes/userRoutes";
 import dmRoutes from "./routes/dmRoutes";
+import embedRoutes from "./routes/embedRoutes";
 import { initSocket } from "./sockets";
 
 const app = express();
@@ -66,6 +67,7 @@ app.use("/api/servers", serverRoutes);
 app.use("/api/chat", channelRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/dms", dmRoutes);
+app.use("/api/embeds", embedRoutes);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   res.status(500).json({ message: err.message || "Internal server error" });

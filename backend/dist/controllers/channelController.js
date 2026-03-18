@@ -1,8 +1,25 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateChannel = exports.deleteCategory = exports.deleteChannel = exports.pinnedMessages = exports.togglePin = exports.toggleReaction = exports.deleteMessage = exports.editMessage = exports.createMessage = exports.listMessages = exports.createChannel = exports.createCategory = void 0;
+const node_fs_1 = __importDefault(require("node:fs"));
+const node_path_1 = __importDefault(require("node:path"));
 const prisma_1 = require("../lib/prisma");
 const prismaAny = prisma_1.prisma;
+const normalizeChannelName = (value) => {
+    return value.trim().replace(/\s+/g, "-").toLowerCase();
+};
+const deleteAttachmentIfLocal = (attachmentUrl) => {
+    if (!attachmentUrl || !attachmentUrl.startsWith("/uploads/")) {
+        return;
+    }
+    const filePath = node_path_1.default.resolve(process.cwd(), attachmentUrl.slice(1));
+    if (node_fs_1.default.existsSync(filePath)) {
+        node_fs_1.default.unlinkSync(filePath);
+    }
+};
 const getServerRoleForChannel = async (channelId, userId) => {
     const channel = await prisma_1.prisma.channel.findUnique({
         where: { id: channelId },
@@ -50,16 +67,32 @@ exports.createCategory = createCategory;
 const createChannel = async (req, res) => {
     const { serverId } = req.params;
     const { name, type, categoryId } = req.body;
+    const normalizedName = normalizeChannelName(name);
+    if (normalizedName.length === 0) {
+        res.status(400).json({ message: "Channel name cannot be empty" });
+        return;
+    }
     const member = await prisma_1.prisma.serverMember.findUnique({ where: { userId_serverId: { userId: req.user.id, serverId } } });
     const server = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
     if (!server || (server.ownerId !== req.user.id && member?.role !== "ADMIN")) {
         res.status(403).json({ message: "Forbidden" });
         return;
     }
+    const duplicate = await prisma_1.prisma.channel.findFirst({
+        where: {
+            serverId,
+            name: normalizedName
+        },
+        select: { id: true }
+    });
+    if (duplicate) {
+        res.status(409).json({ message: "A channel with that name already exists in this server" });
+        return;
+    }
     const channel = await prisma_1.prisma.channel.create({
         data: {
             serverId,
-            name,
+            name: normalizedName,
             type,
             categoryId: categoryId ?? null
         }
@@ -72,7 +105,7 @@ const listMessages = async (req, res) => {
     const messages = await prisma_1.prisma.message.findMany({
         where: { channelId },
         include: {
-            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } },
+            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
             reactions: true,
             replyTo: {
                 select: {
@@ -108,7 +141,7 @@ const createMessage = async (req, res) => {
             attachmentName
         },
         include: {
-            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } },
+            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
             reactions: true,
             replyTo: {
                 select: {
@@ -142,7 +175,7 @@ const editMessage = async (req, res) => {
         where: { id: messageId },
         data: { content, editedAt: new Date() },
         include: {
-            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } },
+            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
             reactions: true
         }
     });
@@ -164,7 +197,9 @@ const deleteMessage = async (req, res) => {
         res.status(403).json({ message: "Forbidden" });
         return;
     }
+    const attachmentUrl = existing.attachmentUrl;
     await prisma_1.prisma.message.delete({ where: { id: messageId } });
+    deleteAttachmentIfLocal(attachmentUrl);
     const io = req.app.get("io");
     io.to(`channel:${existing.channelId}`).emit("message:deleted", { id: messageId });
     res.json({ deleted: true });
@@ -272,10 +307,24 @@ const updateChannel = async (req, res) => {
         res.status(403).json({ message: "Forbidden" });
         return;
     }
-    const normalizedName = typeof name === "string" ? name.trim() : undefined;
+    const normalizedName = typeof name === "string" ? normalizeChannelName(name) : undefined;
     if (normalizedName !== undefined && normalizedName.length === 0) {
         res.status(400).json({ message: "Channel name cannot be empty" });
         return;
+    }
+    if (normalizedName !== undefined) {
+        const duplicate = await prisma_1.prisma.channel.findFirst({
+            where: {
+                serverId: channel.serverId,
+                name: normalizedName,
+                id: { not: channelId }
+            },
+            select: { id: true }
+        });
+        if (duplicate) {
+            res.status(409).json({ message: "A channel with that name already exists in this server" });
+            return;
+        }
     }
     const hasCategoryId = Object.prototype.hasOwnProperty.call(req.body, "categoryId");
     const updated = await prisma_1.prisma.channel.update({
@@ -285,6 +334,8 @@ const updateChannel = async (req, res) => {
             ...(normalizedName !== undefined ? { name: normalizedName } : {})
         }
     });
+    const io = req.app.get("io");
+    io.emit("channel:updated", { channel: updated });
     res.json({ channel: updated });
 };
 exports.updateChannel = updateChannel;

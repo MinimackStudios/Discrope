@@ -1,6 +1,6 @@
 import { type MouseEvent, useEffect, useState } from "react";
-import { Headphones, Mic } from "lucide-react";
 import type { ServerMember, User } from "../types";
+import { formatStatusLabel } from "../lib/formatStatus";
 import StatusDot from "./StatusDot";
 
 const SYSTEM_USERNAME = "Discrope";
@@ -61,7 +61,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
           <div className="space-y-1">
             {online.map((member) => {
               const displayName = member.nickname || member.user.nickname || member.user.username;
-              const secondary = member.user.customStatus?.trim() || member.user.status;
+              const secondary = member.user.customStatus?.trim() || formatStatusLabel(member.user.status);
               return (
                 <div
                   key={member.userId}
@@ -83,8 +83,6 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                     <p className="truncate text-sm text-white">{displayName}</p>
                     <p className="truncate text-[11px] text-discord-muted">{secondary}</p>
                   </div>
-                  <Mic size={13} className="text-discord-muted" />
-                  <Headphones size={13} className="text-discord-muted" />
                 </div>
               );
             })}
@@ -96,7 +94,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
           <div className="space-y-1">
             {offline.map((member) => {
               const displayName = member.nickname || member.user.nickname || member.user.username;
-              const secondary = member.user.customStatus?.trim() || member.user.status;
+              const secondary = member.user.customStatus?.trim() || formatStatusLabel(member.user.status);
               return (
                 <div
                   key={member.userId}

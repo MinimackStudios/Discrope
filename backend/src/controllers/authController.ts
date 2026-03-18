@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma";
 
 const prismaAny = prisma as any;
-const USERNAME_REGEX = /^[a-zA-Z0-9]{2,32}$/;
+const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const RESERVED_USERNAME = "deleteduser";
 
 const signToken = (id: string, username: string): string => {
@@ -26,7 +26,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   const normalizedNickname = (nickname ?? "").trim();
 
   if (!USERNAME_REGEX.test(normalizedUsername)) {
-    res.status(400).json({ message: "Username must be 2-32 letters and numbers only" });
+    res.status(400).json({ message: "Username must be 2-32 lowercase letters and numbers only" });
     return;
   }
   if (normalizedUsername.toLowerCase() === RESERVED_USERNAME) {
@@ -109,7 +109,14 @@ export const me = async (req: Request, res: Response): Promise<void> => {
   res.json({ user });
 };
 
-export const logout = async (_req: Request, res: Response): Promise<void> => {
+export const logout = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.id;
+  if (userId) {
+    await prismaAny.user.update({ where: { id: userId }, data: { status: "OFFLINE" } }).catch(() => undefined);
+    const io = req.app.get("io");
+    io?.emit("presence:update", { userId, status: "OFFLINE" });
+  }
+
   res.clearCookie("token");
   res.json({ ok: true });
 };

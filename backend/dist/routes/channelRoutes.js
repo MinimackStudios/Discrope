@@ -10,7 +10,7 @@ const router = (0, express_1.Router)();
 router.use(auth_1.authMiddleware);
 router.post("/servers/:serverId/categories", (0, express_validator_1.body)("name").isLength({ min: 1, max: 64 }), validate_1.validateRequest, channelController_1.createCategory);
 router.delete("/categories/:categoryId", channelController_1.deleteCategory);
-router.post("/servers/:serverId/channels", (0, express_validator_1.body)("name").isLength({ min: 1, max: 64 }), (0, express_validator_1.body)("type").isIn(["TEXT", "VOICE"]), validate_1.validateRequest, channelController_1.createChannel);
+router.post("/servers/:serverId/channels", (0, express_validator_1.body)("name").trim().isLength({ min: 1, max: 64 }), (0, express_validator_1.body)("type").isIn(["TEXT"]), validate_1.validateRequest, channelController_1.createChannel);
 router.delete("/channels/:channelId", channelController_1.deleteChannel);
 router.patch("/channels/:channelId", channelController_1.updateChannel);
 router.get("/channels/:channelId/messages", channelController_1.listMessages);

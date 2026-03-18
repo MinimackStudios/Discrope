@@ -1,19 +1,24 @@
-﻿import { type MouseEvent, type ReactNode, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+﻿import { type ChangeEvent, type MouseEvent, type ReactNode, FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import remarkGfm from "remark-gfm";
 import ReactMarkdown from "react-markdown";
 import EmojiPicker, { Theme } from "emoji-picker-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Edit3, Paperclip, Reply, Smile, Trash2 } from "lucide-react";
+import { Download, Edit3, FileAudio2, Paperclip, Pause, Play, Reply, Smile, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useChatStore } from "../lib/stores/chatStore";
+import { api } from "../lib/api";
 import { getSocket } from "../lib/socket";
+import OpenGraphEmbed from "./OpenGraphEmbed";
 import StatusDot from "./StatusDot";
 import type { DMMessage, Message, ServerMember, User } from "../types";
+
+type ChatMessage = Message | DMMessage;
 
 type Props = {
   me: User;
   mode: "SERVER" | "DM";
   channelName: string;
-  messages: Array<Message | DMMessage>;
+  messages: ChatMessage[];
+  focusMessageId?: string | null;
   typingUsers: string[];
   mentionMembers?: ServerMember[];
   onOpenProfile: (user: User) => void;
@@ -28,14 +33,426 @@ type MemberContextMenu = {
   member: User;
 };
 
+const isFileDrag = (event: DragEvent): boolean => {
+  const items = event.dataTransfer?.items;
+  if (!items) {
+    return false;
+  }
+  return Array.from(items).some((item) => item.kind === "file");
+};
+
+const hasAttachableFilesInEvent = (event: DragEvent | React.DragEvent): boolean => {
+  const items = event.dataTransfer?.items;
+  if (!items) {
+    return false;
+  }
+
+  return Array.from(items).some((item) => {
+    if (item.kind !== "file") {
+      return false;
+    }
+    const entry = (item as DataTransferItem & { webkitGetAsEntry?: () => { isDirectory?: boolean } | null }).webkitGetAsEntry?.();
+    if (entry?.isDirectory) {
+      return false;
+    }
+    return true;
+  });
+};
+
+const getFirstAttachableFile = (dataTransfer: DataTransfer | null | undefined): File | null => {
+  const items = dataTransfer?.items;
+  if (items) {
+    for (const item of Array.from(items)) {
+      if (item.kind !== "file") {
+        continue;
+      }
+      const entry = (item as DataTransferItem & { webkitGetAsEntry?: () => { isDirectory?: boolean } | null }).webkitGetAsEntry?.();
+      if (entry?.isDirectory) {
+        continue;
+      }
+      const file = item.getAsFile();
+      if (file) {
+        return file;
+      }
+    }
+  }
+
+  return dataTransfer?.files?.[0] ?? null;
+};
+
 const SYSTEM_USERNAME = "Discrope";
 const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
+const INVITE_REGEX = /(?:https?:\/\/[^\s]+\/invite\/|\/invite\/)([a-z0-9-]{3,32})/i;
+const URL_REGEX = /https?:\/\/[^\s<>()]+[^\s<>().,!?:;\]\)]/gi;
+const DRAFT_STORAGE_KEY = "discrope_message_drafts_v1";
+const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+const MARKDOWN_SYNTAX_REGEX = /[`*_~\[\]()>#]|(?:^|\s)-\s|https?:\/\//;
+const VIRTUALIZATION_THRESHOLD = 80;
+const DEFAULT_MESSAGE_ROW_HEIGHT = 84;
+const VIRTUALIZATION_OVERSCAN_PX = 800;
+
+type InvitePreview = {
+  code: string;
+  server: {
+    id: string;
+    name: string;
+    iconUrl?: string | null;
+    memberCount: number;
+  };
+};
+
+const invitePreviewCache = new Map<string, InvitePreview | null>();
+
+const extractInviteCode = (content: string): string | null => {
+  const match = content.match(INVITE_REGEX);
+  if (!match?.[1]) {
+    return null;
+  }
+  return match[1].toLowerCase();
+};
+
+const extractOpenGraphUrls = (content: string): string[] => {
+  const matches = content.match(URL_REGEX) ?? [];
+  const uniqueUrls = new Set<string>();
+
+  for (const rawMatch of matches) {
+    try {
+      const url = new URL(rawMatch);
+      if (url.pathname.toLowerCase().includes("/invite/")) {
+        continue;
+      }
+      uniqueUrls.add(url.toString());
+    } catch {
+      continue;
+    }
+
+    if (uniqueUrls.size >= 3) {
+      break;
+    }
+  }
+
+  return Array.from(uniqueUrls);
+};
+
+const loadDrafts = (): Record<string, string> => {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return {};
+  }
+};
+
+const persistDrafts = (drafts: Record<string, string>): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
+};
+
+const InviteEmbed = ({ inviteCode }: { inviteCode: string }): JSX.Element | null => {
+  const loadServers = useChatStore((s) => s.loadServers);
+  const [invite, setInvite] = useState<InvitePreview | null>(invitePreviewCache.get(inviteCode) ?? null);
+  const [loading, setLoading] = useState(!invitePreviewCache.has(inviteCode));
+  const [joinMessage, setJoinMessage] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
+
+  useEffect(() => {
+    const cached = invitePreviewCache.get(inviteCode);
+    if (cached !== undefined) {
+      setInvite(cached);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    void api
+      .get(`/servers/invite/${inviteCode}`)
+      .then(({ data }) => {
+        const preview = data.invite as InvitePreview;
+        invitePreviewCache.set(inviteCode, preview);
+        if (!cancelled) {
+          setInvite(preview);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        invitePreviewCache.set(inviteCode, null);
+        if (!cancelled) {
+          setInvite(null);
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteCode]);
+
+  if (loading) {
+    return <div className="mt-1.5 inline-flex rounded-md border border-[#3f4248] bg-[#2b2d31] px-2 py-1 text-[11px] text-discord-muted">Loading invite...</div>;
+  }
+
+  if (!invite) {
+    return null;
+  }
+
+  const acceptInvite = async (): Promise<void> => {
+    if (joining) {
+      return;
+    }
+
+    setJoining(true);
+    setJoinMessage(null);
+    try {
+      await api.post(`/servers/invite/${invite.code}`);
+      await loadServers();
+      setJoinMessage("Joined");
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      const backendMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setJoinMessage(status === 403 ? (backendMessage ?? "You are banned from this server.") : (backendMessage ?? "Failed to join."));
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  return (
+    <div className="mt-1.5 w-full max-w-[320px] rounded-md border border-[#3f4248] bg-[#2b2d31] p-2">
+      <div className="flex items-center gap-2">
+        <img
+          src={invite.server.iconUrl || DEFAULT_AVATAR_URL}
+          alt={invite.server.name}
+          className="h-8 w-8 rounded-lg object-cover"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-discord-muted">Invite</p>
+          <p className="truncate text-xs font-semibold text-white">{invite.server.name}</p>
+          <p className="text-[11px] text-discord-muted">{invite.server.memberCount} members</p>
+        </div>
+        <div className="flex gap-1">
+          <a
+            href={`${import.meta.env.BASE_URL}invite/${invite.code}`}
+            className="rounded bg-[#3a3d45] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#4a4e57]"
+          >
+            Open
+          </a>
+          <button
+            type="button"
+            onClick={() => void acceptInvite()}
+            disabled={joining}
+            className="rounded bg-discord-blurple px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#4752c4] disabled:opacity-60"
+          >
+            {joining ? "Joining..." : "Accept"}
+          </button>
+        </div>
+      </div>
+      {joinMessage ? <p className="mt-1 text-[11px] text-discord-muted">{joinMessage}</p> : null}
+    </div>
+  );
+};
+
+const formatAudioTime = (seconds: number): string => {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "0:00";
+  }
+
+  const whole = Math.floor(seconds);
+  const mins = Math.floor(whole / 60);
+  const secs = whole % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "";
+  }
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1) {
+    return `${mb.toFixed(2)} MB`;
+  }
+  const kb = bytes / 1024;
+  return `${Math.max(1, Math.round(kb))} KB`;
+};
+
+const AudioAttachmentPlayer = ({ src, attachmentName }: { src: string; attachmentName?: string | null }): JSX.Element => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [fileSizeLabel, setFileSizeLabel] = useState("");
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    const onTimeUpdate = (): void => setCurrentTime(audio.currentTime || 0);
+    const onLoadedMetadata = (): void => setDuration(audio.duration || 0);
+    const onEnded = (): void => setIsPlaying(false);
+
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("loadedmetadata", onLoadedMetadata);
+    audio.addEventListener("ended", onEnded);
+
+    return () => {
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("ended", onEnded);
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(src, { method: "HEAD", signal: controller.signal })
+      .then((response) => {
+        const rawSize = response.headers.get("content-length");
+        const bytes = rawSize ? Number(rawSize) : 0;
+        setFileSizeLabel(formatFileSize(bytes));
+      })
+      .catch(() => {
+        setFileSizeLabel("");
+      });
+
+    return () => controller.abort();
+  }, [src]);
+
+  const togglePlayback = async (): Promise<void> => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    try {
+      await audio.play();
+      setIsPlaying(true);
+    } catch {
+      setIsPlaying(false);
+    }
+  };
+
+  const onSeek = (nextTime: number): void => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    audio.currentTime = nextTime;
+    setCurrentTime(nextTime);
+  };
+
+  const onProgressClick = (event: React.MouseEvent<HTMLDivElement>): void => {
+    if (!duration || !progressBarRef.current) {
+      return;
+    }
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    onSeek(duration * ratio);
+  };
+
+  const toggleMute = (): void => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    const nextMuted = !audio.muted;
+    audio.muted = nextMuted;
+    setIsMuted(nextMuted);
+  };
+
+  const displayName = attachmentName || "audio";
+  const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
+  const timer = `${formatAudioTime(currentTime)} / ${formatAudioTime(duration)}`;
+
+  return (
+    <div className="mt-2 w-full max-w-[460px] rounded-lg border border-[#3a3e46] bg-[#1f2229] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <audio ref={audioRef} src={src} preload="metadata" />
+      <div className="flex items-center gap-2">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded bg-[#dfe2ff] text-[#5865f2]">
+          <FileAudio2 size={18} />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-base leading-5 text-[#69a0ff]">{displayName}</p>
+          {fileSizeLabel ? <p className="mt-0.5 text-xs text-[#949ba4]">{fileSizeLabel}</p> : null}
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-3 rounded-lg bg-[#0f1116] px-3 py-2">
+        <button
+          type="button"
+          onClick={() => void togglePlayback()}
+          className="grid h-6 w-6 shrink-0 place-items-center text-[#b5bac1] hover:text-white"
+          title={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
+        </button>
+        <span className="shrink-0 text-sm font-medium text-[#dbdee1]">{timer}</span>
+        <div
+          ref={progressBarRef}
+          onClick={onProgressClick}
+          className="relative h-2 min-w-0 flex-1 cursor-pointer rounded-full bg-[#535862]"
+        >
+          <div className="absolute left-0 top-0 h-2 rounded-full bg-[#5865f2]" style={{ width: `${progress * 100}%` }} />
+          <div
+            className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#b5bac1]"
+            style={{ left: `calc(${progress * 100}% - 5px)` }}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={toggleMute}
+          className="grid h-6 w-6 shrink-0 place-items-center text-[#b5bac1] hover:text-white"
+          title={isMuted ? "Unmute" : "Mute"}
+        >
+          {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const VideoAttachmentPlayer = ({ src, attachmentName }: { src: string; attachmentName?: string | null }): JSX.Element => {
+  return (
+    <div className="mt-2 w-full max-w-[520px] rounded-md border border-[#3f4248] bg-[#2b2d31] p-2">
+      <video src={src} controls className="max-h-80 w-full rounded-md" />
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <p className="truncate text-xs text-discord-muted">{attachmentName || "video"}</p>
+        <div className="flex items-center gap-1">
+          <a
+            href={src}
+            download={attachmentName || "video"}
+            className="rounded bg-[#3a3d45] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#4a4e57]"
+          >
+            <span className="inline-flex items-center gap-1"><Download size={12} /> Download</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const ChatArea = ({
   me,
   mode,
   channelName,
   messages,
+  focusMessageId,
   typingUsers,
   mentionMembers = [],
   onOpenProfile,
@@ -46,6 +463,7 @@ const ChatArea = ({
   const sendMessage = useChatStore((s) => s.sendMessage);
   const sendDMMessage = useChatStore((s) => s.sendDMMessage);
   const editMessage = useChatStore((s) => s.editMessage);
+  const editDMMessage = useChatStore((s) => s.editDMMessage);
   const deleteMessage = useChatStore((s) => s.deleteMessage);
   const deleteDMMessage = useChatStore((s) => s.deleteDMMessage);
   const toggleReaction = useChatStore((s) => s.toggleReaction);
@@ -53,17 +471,43 @@ const ChatArea = ({
   const activeDMId = useChatStore((s) => s.activeDMId);
 
   const [content, setContent] = useState("");
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => loadDrafts());
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null);
   const [memberContextMenu, setMemberContextMenu] = useState<MemberContextMenu | null>(null);
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const consumedFocusMessageIdRef = useRef<string | null>(null);
+  const initialScrollPositionedRef = useRef(false);
+  const stickToBottomRef = useRef(true);
+  const previousMessageCountRef = useRef(0);
+  const pendingScrollRequestRef = useRef<{ messageId: string; behavior: ScrollBehavior; block: ScrollLogicalPosition } | null>(null);
+  const measuredMessageHeightsRef = useRef<Record<string, number>>({});
+  const messageResizeObserversRef = useRef<Record<string, ResizeObserver>>({});
+  const dragDepthRef = useRef(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [heightVersion, setHeightVersion] = useState(0);
+
+  const activeDraftKey = useMemo(() => {
+    if (mode === "SERVER" && activeChannelId) {
+      return `SERVER:${activeChannelId}`;
+    }
+    if (mode === "DM" && activeDMId) {
+      return `DM:${activeDMId}`;
+    }
+    return null;
+  }, [mode, activeChannelId, activeDMId]);
 
   const mentionToken = useMemo(() => {
     if (mode !== "SERVER") {
@@ -145,7 +589,7 @@ const ChatArea = ({
   const renderMentionPills = (rawContent: string): JSX.Element => {
     const lines = rawContent.split("\n");
     return (
-      <div className="whitespace-pre-wrap">
+      <span className="whitespace-pre-wrap">
         {lines.map((line, lineIndex) => {
           const parts: ReactNode[] = [];
           const regex = /(^|\s)@([a-zA-Z0-9_]{1,32})/g;
@@ -198,13 +642,17 @@ const ChatArea = ({
             </span>
           );
         })}
-      </div>
+      </span>
     );
   };
 
   const renderMessageContent = (rawContent: string): JSX.Element => {
     if (mode === "SERVER" && /(^|\s)@([a-zA-Z0-9_]{1,32})/.test(rawContent)) {
       return renderMentionPills(rawContent);
+    }
+
+    if (!MARKDOWN_SYNTAX_REGEX.test(rawContent)) {
+      return <span className="whitespace-pre-wrap">{rawContent}</span>;
     }
 
     return (
@@ -223,13 +671,221 @@ const ChatArea = ({
     );
   };
 
+  const shouldVirtualizeMessages = messages.length > VIRTUALIZATION_THRESHOLD;
+
+  const messageLayout = useMemo(() => {
+    const offsets = new Array<number>(messages.length + 1);
+    offsets[0] = 0;
+
+    for (let index = 0; index < messages.length; index += 1) {
+      const message = messages[index];
+      const height = measuredMessageHeightsRef.current[message.id] ?? DEFAULT_MESSAGE_ROW_HEIGHT;
+      offsets[index + 1] = offsets[index] + height;
+    }
+
+    return {
+      offsets,
+      totalHeight: offsets[messages.length] ?? 0
+    };
+  }, [messages, heightVersion]);
+
+  const visibleRange = useMemo(() => {
+    if (!shouldVirtualizeMessages) {
+      return {
+        start: 0,
+        end: messages.length,
+        topPadding: 0,
+        bottomPadding: 0
+      };
+    }
+
+    const overscannedTop = Math.max(0, scrollTop - VIRTUALIZATION_OVERSCAN_PX);
+    const overscannedBottom = scrollTop + Math.max(viewportHeight, 1) + VIRTUALIZATION_OVERSCAN_PX;
+
+    let start = 0;
+    while (start < messages.length && messageLayout.offsets[start + 1] < overscannedTop) {
+      start += 1;
+    }
+
+    let end = start;
+    while (end < messages.length && messageLayout.offsets[end] < overscannedBottom) {
+      end += 1;
+    }
+
+    const safeEnd = Math.min(messages.length, end + 1);
+    return {
+      start,
+      end: safeEnd,
+      topPadding: messageLayout.offsets[start] ?? 0,
+      bottomPadding: Math.max(0, messageLayout.totalHeight - (messageLayout.offsets[safeEnd] ?? messageLayout.totalHeight))
+    };
+  }, [messageLayout, messages.length, scrollTop, shouldVirtualizeMessages, viewportHeight]);
+
+  const visibleMessages = shouldVirtualizeMessages ? messages.slice(visibleRange.start, visibleRange.end) : messages;
+
+  const scrollMessageIntoView = (messageId: string, behavior: ScrollBehavior, block: ScrollLogicalPosition): void => {
+    const node = scrollRef.current;
+    if (!node) {
+      return;
+    }
+
+    const messageIndex = messages.findIndex((message) => message.id === messageId);
+    if (messageIndex === -1) {
+      return;
+    }
+
+    const top = messageLayout.offsets[messageIndex] ?? 0;
+    const bottom = messageLayout.offsets[messageIndex + 1] ?? (top + DEFAULT_MESSAGE_ROW_HEIGHT);
+    const height = bottom - top;
+
+    let targetTop = top;
+    if (block === "center") {
+      targetTop = top - (node.clientHeight / 2) + (height / 2);
+    } else if (block === "end") {
+      targetTop = bottom - node.clientHeight;
+    }
+
+    pendingScrollRequestRef.current = { messageId, behavior, block };
+    node.scrollTo({ top: Math.max(0, targetTop), behavior });
+  };
+
+  const bindMessageNode = (messageId: string, node: HTMLElement | null): void => {
+    const existingObserver = messageResizeObserversRef.current[messageId];
+    if (existingObserver) {
+      existingObserver.disconnect();
+      delete messageResizeObserversRef.current[messageId];
+    }
+
+    if (!node) {
+      return;
+    }
+
+    const syncHeight = (): void => {
+      const nextHeight = Math.ceil(node.getBoundingClientRect().height) + 2;
+      if (measuredMessageHeightsRef.current[messageId] === nextHeight) {
+        return;
+      }
+
+      measuredMessageHeightsRef.current[messageId] = nextHeight;
+      setHeightVersion((current) => current + 1);
+    };
+
+    syncHeight();
+
+    const observer = new ResizeObserver(() => {
+      syncHeight();
+    });
+    observer.observe(node);
+    messageResizeObserversRef.current[messageId] = observer;
+  };
+
   const scrollToBottom = (behavior: ScrollBehavior = "smooth"): void => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior });
   };
 
   useEffect(() => {
-    scrollToBottom("smooth");
-  }, [messages]);
+    initialScrollPositionedRef.current = false;
+    consumedFocusMessageIdRef.current = null;
+    previousMessageCountRef.current = 0;
+    pendingScrollRequestRef.current = null;
+    measuredMessageHeightsRef.current = {};
+    Object.values(messageResizeObserversRef.current).forEach((observer) => observer.disconnect());
+    messageResizeObserversRef.current = {};
+    stickToBottomRef.current = true;
+    setScrollTop(0);
+    setViewportHeight(0);
+    setHeightVersion(0);
+  }, [mode, activeChannelId, activeDMId]);
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateScrollMetrics = (): void => {
+      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+      stickToBottomRef.current = distanceFromBottom <= 72;
+      setScrollTop(node.scrollTop);
+      setViewportHeight(node.clientHeight);
+    };
+
+    updateScrollMetrics();
+    const resizeObserver = new ResizeObserver(() => updateScrollMetrics());
+    resizeObserver.observe(node);
+    node.addEventListener("scroll", updateScrollMetrics, { passive: true });
+    return () => {
+      node.removeEventListener("scroll", updateScrollMetrics);
+      resizeObserver.disconnect();
+    };
+  }, [mode, activeChannelId, activeDMId]);
+
+  useLayoutEffect(() => {
+    if (!messages.length) {
+      previousMessageCountRef.current = 0;
+      return;
+    }
+
+    const previousCount = previousMessageCountRef.current;
+    const messageCountIncreased = messages.length > previousCount;
+    previousMessageCountRef.current = messages.length;
+
+    const isInitialPosition = !initialScrollPositionedRef.current;
+    const defaultBehavior: ScrollBehavior = "auto";
+
+    const scrollBottom = (): void => {
+      scrollToBottom(defaultBehavior);
+      initialScrollPositionedRef.current = true;
+    };
+
+    if (mode === "SERVER" && focusMessageId && consumedFocusMessageIdRef.current !== focusMessageId) {
+      const focusUnreadMessage = (attempt = 0): void => {
+        const element = document.getElementById(`message-${focusMessageId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: defaultBehavior, block: "center" });
+          consumedFocusMessageIdRef.current = focusMessageId;
+          initialScrollPositionedRef.current = true;
+          return;
+        }
+
+        if (attempt < 2) {
+          scrollMessageIntoView(focusMessageId, defaultBehavior, "center");
+          window.requestAnimationFrame(() => focusUnreadMessage(attempt + 1));
+          return;
+        }
+
+        scrollBottom();
+      };
+
+      focusUnreadMessage();
+      return;
+    }
+
+    if (!isInitialPosition && !messageCountIncreased) {
+      return;
+    }
+
+    if (!isInitialPosition && !stickToBottomRef.current) {
+      return;
+    }
+
+    scrollBottom();
+  }, [focusMessageId, messages, mode, scrollMessageIntoView]);
+
+  useLayoutEffect(() => {
+    const pendingRequest = pendingScrollRequestRef.current;
+    if (!pendingRequest) {
+      return;
+    }
+
+    const element = document.getElementById(`message-${pendingRequest.messageId}`);
+    if (!element) {
+      return;
+    }
+
+    element.scrollIntoView({ behavior: pendingRequest.behavior, block: pendingRequest.block });
+    pendingScrollRequestRef.current = null;
+  }, [heightVersion, scrollTop, visibleRange.end, visibleRange.start]);
 
   // Auto-focus input when channel/DM changes
   useEffect(() => {
@@ -240,8 +896,6 @@ const ChatArea = ({
   useEffect(() => {
     if (replyTo) {
       inputRef.current?.focus();
-      // When the reply banner appears, keep the composer visible at the bottom.
-      window.requestAnimationFrame(() => scrollToBottom("auto"));
     }
   }, [replyTo]);
 
@@ -250,6 +904,9 @@ const ChatArea = ({
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         closeContextMenu();
+        setReplyTo(null);
+        setAttachment(null);
+        setAttachmentError(null);
       }
     };
     window.addEventListener("click", closeContextMenu);
@@ -263,8 +920,74 @@ const ChatArea = ({
   }, []);
 
   useEffect(() => {
+    const onWindowDragOver = (event: DragEvent): void => {
+      if (!isFileDrag(event)) {
+        return;
+      }
+      event.preventDefault();
+    };
+
+    const onWindowDrop = (event: DragEvent): void => {
+      if (!isFileDrag(event)) {
+        return;
+      }
+      event.preventDefault();
+    };
+
+    window.addEventListener("dragover", onWindowDragOver);
+    window.addEventListener("drop", onWindowDrop);
+    return () => {
+      window.removeEventListener("dragover", onWindowDragOver);
+      window.removeEventListener("drop", onWindowDrop);
+    };
+  }, []);
+
+  useEffect(() => {
     setHighlightedMentionIndex(0);
   }, [mentionMenuOpen, mentionQuery]);
+
+  useEffect(() => {
+    if (!activeDraftKey) {
+      setContent("");
+      return;
+    }
+    setContent(drafts[activeDraftKey] ?? "");
+  }, [activeDraftKey, drafts]);
+
+  useEffect(() => {
+    if (!attachment || (!attachment.type.startsWith("image/") && !attachment.type.startsWith("video/"))) {
+      setAttachmentPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(attachment);
+    setAttachmentPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment]);
+
+  const onAttachmentInputChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      setAttachment(null);
+      setAttachmentError(null);
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setAttachment(null);
+      setAttachmentError("You can't send files larger than 100 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    setAttachment(file);
+    setAttachmentError(null);
+    event.target.value = "";
+  };
 
   const selectMention = (member: ServerMember): void => {
     setContent((prev) => prev.replace(/(?:^|\s)@([a-zA-Z0-9_]*)$/, (full) => `${full.startsWith(" ") ? " " : ""}@${member.user.username} `));
@@ -274,19 +997,45 @@ const ChatArea = ({
 
   const onSubmit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
+    if (attachmentError) {
+      return;
+    }
     if (!content.trim() && !attachment) {
       return;
     }
 
-    if (mode === "DM") {
-      await sendDMMessage(content, attachment);
-    } else {
-      await sendMessage(content, replyTo?.id, attachment);
+    try {
+      if (mode === "DM") {
+        await sendDMMessage(content, replyTo?.id, attachment);
+      } else {
+        await sendMessage(content, replyTo?.id, attachment);
+      }
+    } catch (error: unknown) {
+      const backendMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      const isFileTooLarge = typeof backendMessage === "string" && backendMessage.toLowerCase().includes("file too large");
+      setAttachmentError(isFileTooLarge ? "You can't send files larger than 100 MB." : (backendMessage ?? "Failed to send message."));
+      return;
     }
+
+    if (activeDraftKey) {
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[activeDraftKey];
+        persistDrafts(next);
+        return next;
+      });
+    }
+
     setContent("");
     setAttachment(null);
+    setAttachmentError(null);
     setReplyTo(null);
-    getSocket()?.emit("typing:stop", activeChannelId);
+    const socket = getSocket();
+    if (mode === "SERVER" && activeChannelId) {
+      socket?.emit("typing:stop", { scope: "CHANNEL", id: activeChannelId });
+    } else if (mode === "DM" && activeDMId) {
+      socket?.emit("typing:stop", { scope: "DM", id: activeDMId });
+    }
     inputRef.current?.focus();
   };
 
@@ -294,21 +1043,29 @@ const ChatArea = ({
     if (!editingDraft.trim()) {
       return;
     }
-    await editMessage(messageId, editingDraft);
+    if (mode === "DM" && activeDMId) {
+      await editDMMessage(activeDMId, messageId, editingDraft);
+    } else {
+      await editMessage(messageId, editingDraft);
+    }
     setEditingId(null);
     setEditingDraft("");
   };
 
   const typingLabel = useMemo(() => {
-    const filtered = typingUsers.filter((u) => u !== me.username);
+    const myNickname = me.nickname?.trim();
+    const filtered = typingUsers.filter((u) => u !== me.username && (!myNickname || u !== myNickname));
     if (!filtered.length) {
       return "";
     }
     if (filtered.length === 1) {
       return `${filtered[0]} is typing...`;
     }
-    return `${filtered.slice(0, 2).join(", ")} are typing...`;
-  }, [typingUsers, me.username]);
+    if (filtered.length === 2) {
+      return `${filtered[0]} and ${filtered[1]} is typing...`;
+    }
+    return `${filtered.join(", ")} are typing...`;
+  }, [typingUsers, me.username, me.nickname]);
 
   const renderAttachment = (attachmentUrl?: string | null, attachmentName?: string | null): JSX.Element | null => {
     if (!attachmentUrl) {
@@ -324,10 +1081,10 @@ const ChatArea = ({
       return <img src={attachmentUrl} alt={attachmentName ?? "attachment"} className="mt-2 max-h-80 rounded-md object-cover" />;
     }
     if (videoExt) {
-      return <video src={attachmentUrl} controls className="mt-2 max-h-80 rounded-md" />;
+      return <VideoAttachmentPlayer src={attachmentUrl} attachmentName={attachmentName} />;
     }
     if (audioExt) {
-      return <audio src={attachmentUrl} controls className="mt-2 w-full" />;
+      return <AudioAttachmentPlayer src={attachmentUrl} attachmentName={attachmentName} />;
     }
 
     return (
@@ -337,12 +1094,31 @@ const ChatArea = ({
     );
   };
 
-  const jumpToMessage = (messageId: string): void => {
-    const element = document.getElementById(`message-${messageId}`);
-    if (!element) {
-      return;
+  const renderInviteEmbed = (rawContent: string): JSX.Element | null => {
+    const inviteCode = extractInviteCode(rawContent);
+    if (!inviteCode) {
+      return null;
     }
-    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    return <InviteEmbed inviteCode={inviteCode} />;
+  };
+
+  const renderOpenGraphEmbeds = (rawContent: string): JSX.Element | null => {
+    const urls = extractOpenGraphUrls(rawContent);
+    if (!urls.length) {
+      return null;
+    }
+
+    return (
+      <div>
+        {urls.map((url) => (
+          <OpenGraphEmbed key={url} url={url} />
+        ))}
+      </div>
+    );
+  };
+
+  const jumpToMessage = (messageId: string): void => {
+    scrollMessageIntoView(messageId, "smooth", "center");
     setHighlightMessageId(messageId);
     window.setTimeout(() => setHighlightMessageId((current) => (current === messageId ? null : current)), 1800);
   };
@@ -370,17 +1146,70 @@ const ChatArea = ({
   };
 
   return (
-    <section className="flex h-full min-w-0 flex-1 flex-col bg-discord-dark4">
+    <section
+      className="relative flex h-full min-w-0 flex-1 flex-col bg-discord-dark4"
+      onDragEnter={(event) => {
+        if (!hasAttachableFilesInEvent(event)) {
+          return;
+        }
+        event.preventDefault();
+        dragDepthRef.current += 1;
+        setDragActive(true);
+      }}
+      onDragOver={(event) => {
+        if (!hasAttachableFilesInEvent(event)) {
+          return;
+        }
+        event.preventDefault();
+      }}
+      onDragLeave={(event) => {
+        if (!hasAttachableFilesInEvent(event)) {
+          return;
+        }
+        event.preventDefault();
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) {
+          setDragActive(false);
+        }
+      }}
+      onDrop={(event) => {
+        if (!isFileDrag(event.nativeEvent)) {
+          return;
+        }
+        event.preventDefault();
+        dragDepthRef.current = 0;
+        setDragActive(false);
+        const file = getFirstAttachableFile(event.dataTransfer);
+        if (!file) {
+          return;
+        }
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          setAttachment(null);
+          setAttachmentError("You can't send files larger than 100 MB.");
+          return;
+        }
+        setAttachment(file);
+        setAttachmentError(null);
+      }}
+    >
+      {dragActive ? (
+        <div className="pointer-events-none absolute inset-0 z-40 grid place-items-center bg-black/45">
+          <div className="rounded-lg border border-[#7f8699] bg-[#2b2d31] px-4 py-3 text-sm font-semibold text-white shadow-lg">
+            Drop file to attach
+          </div>
+        </div>
+      ) : null}
       <header className="flex h-12 items-center border-b border-black/30 px-4 text-sm font-semibold shadow-sm">
         {mode === "SERVER" ? "#" : "@"} {channelName || "select-channel"}
       </header>
 
       <div ref={scrollRef} className="discord-scrollbar flex-1 overflow-y-auto px-3 py-4">
-        <AnimatePresence initial={false}>
-          {messages.map((message, index) => {
+          {visibleRange.topPadding > 0 ? <div style={{ height: visibleRange.topPadding }} /> : null}
+          {visibleMessages.map((message, visibleIndex) => {
+            const index = shouldVirtualizeMessages ? visibleRange.start + visibleIndex : visibleIndex;
             const mine = message.authorId === me.id;
-            const mentionIds = extractMentionedUserIds(message.content);
-            const mentionByText = mentionIds.has(me.id) || message.content.includes(`@${me.username}`);
+            const couldMention = mode === "SERVER" && message.content.includes("@");
+            const mentionByText = couldMention && (extractMentionedUserIds(message.content).has(me.id) || message.content.includes(`@${me.username}`));
             const mentionByReply =
               "replyTo" in message &&
               Boolean(message.replyTo) &&
@@ -398,22 +1227,19 @@ const ChatArea = ({
             const isReplyTarget = replyTo?.id === message.id;
             return (
               <motion.article
+                ref={(node) => bindMessageNode(message.id, node)}
                 key={message.id}
                 id={`message-${message.id}`}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
                 onContextMenu={(event) => openMemberContextMenu(event, message)}
                 onDoubleClick={() => {
-                  if (mode === "SERVER") {
-                    if (mine) {
-                      setEditingId(message.id);
-                      setEditingDraft(message.content);
-                    } else {
-                      setReplyTo(message as Message);
-                    }
+                  if (mine) {
+                    setEditingId(message.id);
+                    setEditingDraft(message.content);
+                  } else {
+                    setReplyTo(message);
                   }
                 }}
-                className={`group relative mb-0.5 flex gap-3 rounded px-2 ${groupedCompact ? "py-0.5" : "py-1"} hover:bg-black/10 ${mentionMe ? "bg-[#3d3a2d]" : ""} ${
+                className={`group relative mb-0.5 flex gap-3 rounded px-2 isolate ${groupedCompact ? "py-0.5" : "py-1"} hover:bg-black/10 ${mentionMe ? "bg-[#3d3a2d]" : ""} ${
                   highlightMessageId === message.id || isReplyTarget ? "ring-1 ring-[#5865f2] bg-[#2d3244]/40" : ""
                 }`}
               >
@@ -465,7 +1291,6 @@ const ChatArea = ({
                       <time className="text-xs text-discord-muted">
                         {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </time>
-                      {message.editedAt ? <span className="text-[10px] text-discord-muted">(edited)</span> : null}
                     </div>
                   ) : null}
 
@@ -498,8 +1323,10 @@ const ChatArea = ({
                     <>
                       <div className="message-markdown break-words text-[15px] text-discord-text">
                         {renderMessageContent(message.content)}
-                        {groupedCompact && message.editedAt ? <span className="ml-1 text-[10px] text-discord-muted">(edited)</span> : null}
+                        {message.editedAt ? <span className="ml-1 text-[10px] text-discord-muted">(edited)</span> : null}
                       </div>
+                      {renderInviteEmbed(message.content)}
+                      {renderOpenGraphEmbeds(message.content)}
                       {renderAttachment(message.attachmentUrl, message.attachmentName)}
                     </>
                   )}
@@ -524,80 +1351,82 @@ const ChatArea = ({
                   ) : null}
                 </div>
 
-                <div className="invisible absolute right-2 top-0 -translate-y-1/2 flex h-fit items-center gap-0.5 rounded bg-[#111214] p-0.5 shadow-lg group-hover:visible">
-                  {mode === "SERVER" ? (
-                    <>
-                      <button
-                        className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
-                        title="Reply"
-                        onClick={() => setReplyTo(message as Message)}
-                      >
-                        <Reply size={14} />
-                      </button>
-                      <button
-                        className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
-                        title="React"
-                        onClick={() => setReactionPickerFor(reactionPickerFor === message.id ? null : message.id)}
-                      >
-                        <Smile size={14} />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
-                        title="Reply"
-                        onClick={() => setReplyTo(message as Message)}
-                      >
-                        <Reply size={14} />
-                      </button>
-                      <button
-                        className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
-                        title="React"
-                        onClick={() => setReactionPickerFor(reactionPickerFor === message.id ? null : message.id)}
-                      >
-                        <Smile size={14} />
-                      </button>
-                    </>
-                  )}
-                  {mine ? (
-                    <>
-                      {mode === "SERVER" ? (
+                {editingId !== message.id ? (
+                  <div className="pointer-events-none absolute right-2 top-1 z-10 flex h-fit items-center gap-0.5 rounded bg-[#111214] p-0.5 opacity-0 shadow-md transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+                    {mode === "SERVER" ? (
+                      <>
                         <button
                           className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
-                          title="Edit"
+                          title="Reply"
+                          onClick={() => setReplyTo(message)}
+                        >
+                          <Reply size={14} />
+                        </button>
+                        <button
+                          className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
+                          title="React"
+                          onClick={() => setReactionPickerFor(reactionPickerFor === message.id ? null : message.id)}
+                        >
+                          <Smile size={14} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
+                          title="Reply"
+                          onClick={() => setReplyTo(message)}
+                        >
+                          <Reply size={14} />
+                        </button>
+                        <button
+                          className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
+                          title="React"
+                          onClick={() => setReactionPickerFor(reactionPickerFor === message.id ? null : message.id)}
+                        >
+                          <Smile size={14} />
+                        </button>
+                      </>
+                    )}
+                    {mine ? (
+                      <>
+                        {mode === "SERVER" || mode === "DM" ? (
+                          <button
+                            className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
+                            title="Edit"
+                            onClick={() => {
+                              setEditingId(message.id);
+                              setEditingDraft(message.content);
+                            }}
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                        ) : null}
+                        <button
+                          className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-red-300"
+                          title="Delete"
                           onClick={() => {
-                            setEditingId(message.id);
-                            setEditingDraft(message.content);
+                            if (mode === "DM" && activeDMId) {
+                              void deleteDMMessage(activeDMId, message.id);
+                            } else {
+                              void deleteMessage(message.id);
+                            }
                           }}
                         >
-                          <Edit3 size={14} />
+                          <Trash2 size={14} />
                         </button>
-                      ) : null}
+                      </>
+                    ) : (mode === "SERVER" && canModerateServerMessages) ? (
                       <button
                         className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-red-300"
                         title="Delete"
-                        onClick={() => {
-                          if (mode === "DM" && activeDMId) {
-                            void deleteDMMessage(activeDMId, message.id);
-                          } else {
-                            void deleteMessage(message.id);
-                          }
-                        }}
+                        onClick={() => void deleteMessage(message.id)}
                       >
                         <Trash2 size={14} />
                       </button>
-                    </>
-                  ) : (mode === "SERVER" && canModerateServerMessages) ? (
-                    <button
-                      className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-red-300"
-                      title="Delete"
-                      onClick={() => void deleteMessage(message.id)}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  ) : null}
-                </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {reactionPickerFor === message.id ? (
                   <div className="absolute right-2 top-8 z-30">
@@ -613,12 +1442,33 @@ const ChatArea = ({
               </motion.article>
             );
           })}
-        </AnimatePresence>
+          {visibleRange.bottomPadding > 0 ? <div style={{ height: visibleRange.bottomPadding }} /> : null}
       </div>
 
-      <div className="px-4 pb-1 text-xs text-discord-muted">{typingLabel}</div>
+      {typingLabel ? (
+        <div className="px-4 pb-1 text-xs text-discord-muted">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={typingLabel}
+              initial={{ opacity: 0, y: 3 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 3 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+            >
+              {typingLabel}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      ) : null}
 
-      <form onSubmit={onSubmit} className="relative p-4 pt-1">
+      <form onSubmit={onSubmit} className="relative p-4 pt-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={onAttachmentInputChange}
+        />
+
         {replyTo ? (
           <div className="mb-1 flex items-center justify-between rounded bg-[#2b2d31] px-2 py-1 text-xs text-discord-muted">
             Replying to {replyTo.author.nickname?.trim() || replyTo.author.username}
@@ -628,51 +1478,114 @@ const ChatArea = ({
           </div>
         ) : null}
 
-        <div className="flex items-center gap-2 rounded-lg bg-[#383a40] px-3 py-2">
-          <input
-            ref={inputRef}
-            value={content}
-            onChange={(event) => {
-              setContent(event.target.value);
-              if (activeChannelId) {
-                getSocket()?.emit("typing:start", activeChannelId);
-              }
-            }}
-            onBlur={() => {
-              if (activeChannelId) {
-                getSocket()?.emit("typing:stop", activeChannelId);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (!mentionMenuOpen) {
-                return;
-              }
-              if (event.key === "ArrowDown") {
+        <div className="rounded-lg border border-[#5a5e69] bg-[#4a4d57] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition focus-within:border-[#7f8699] focus-within:shadow-[0_0_0_2px_rgba(127,134,153,0.25)]">
+          {attachment ? (
+            <div className="mb-2 w-fit max-w-[280px] rounded-lg border border-white/10 bg-[#2b2d31] p-2">
+              <div className="relative overflow-hidden rounded-md border border-white/10 bg-[#1e1f22]">
+                {attachmentPreviewUrl && attachment.type.startsWith("image/") ? (
+                  <img src={attachmentPreviewUrl} alt={attachment.name} className="max-h-52 w-full object-cover" />
+                ) : attachmentPreviewUrl && attachment.type.startsWith("video/") ? (
+                  <video
+                    src={attachmentPreviewUrl}
+                    className="max-h-52 w-full object-cover"
+                    muted
+                    playsInline
+                    preload="metadata"
+                  />
+                ) : (
+                  <div className="grid h-36 w-56 place-items-center text-discord-muted">
+                    <Paperclip size={40} />
+                  </div>
+                )}
+                <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-md bg-[#1e1f22]/90 p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAttachment(null);
+                      setAttachmentError(null);
+                    }}
+                    className="rounded p-1.5 text-[#ed4245] hover:bg-[#35373c]"
+                    title="Remove attachment"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+              <p className="mt-2 truncate text-sm text-white">{attachment.name}</p>
+            </div>
+          ) : null}
+
+          <div className="flex items-center gap-2">
+            <button type="button" className="text-discord-muted hover:text-white" onClick={() => fileInputRef.current?.click()}>
+              <Paperclip size={18} />
+            </button>
+            <input
+              ref={inputRef}
+              value={content}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setContent(nextValue);
+                if (activeDraftKey) {
+                  setDrafts((prev) => {
+                    const next = { ...prev };
+                    if (nextValue.trim()) {
+                      next[activeDraftKey] = nextValue;
+                    } else {
+                      delete next[activeDraftKey];
+                    }
+                    persistDrafts(next);
+                    return next;
+                  });
+                }
+                const socket = getSocket();
+                if (mode === "SERVER" && activeChannelId) {
+                  socket?.emit("typing:start", { scope: "CHANNEL", id: activeChannelId });
+                } else if (mode === "DM" && activeDMId) {
+                  socket?.emit("typing:start", { scope: "DM", id: activeDMId });
+                }
+              }}
+              onKeyDown={(event) => {
+                if (!mentionMenuOpen) {
+                  return;
+                }
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setHighlightedMentionIndex((current) => (current + 1) % mentionCandidates.length);
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setHighlightedMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length);
+                  return;
+                }
+                if (event.key === "Enter" || event.key === "Tab") {
+                  event.preventDefault();
+                  selectMention(mentionCandidates[highlightedMentionIndex] ?? mentionCandidates[0]);
+                }
+              }}
+              onPaste={(event) => {
+                const file = getFirstAttachableFile(event.clipboardData);
+                if (!file) {
+                  return;
+                }
                 event.preventDefault();
-                setHighlightedMentionIndex((current) => (current + 1) % mentionCandidates.length);
-                return;
-              }
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setHighlightedMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length);
-                return;
-              }
-              if (event.key === "Enter" || event.key === "Tab") {
-                event.preventDefault();
-                selectMention(mentionCandidates[highlightedMentionIndex] ?? mentionCandidates[0]);
-              }
-            }}
-            placeholder={mode === "SERVER" ? `Message #${channelName}` : `Message @${channelName}`}
-            className="w-full bg-transparent text-sm text-white outline-none"
-          />
-          <label className="cursor-pointer text-discord-muted hover:text-white">
-            <Paperclip size={18} />
-            <input type="file" className="hidden" onChange={(event) => setAttachment(event.target.files?.[0] ?? null)} />
-          </label>
-          <button type="button" className="text-discord-muted hover:text-white" onClick={() => setShowPicker((v) => !v)}>
-            <Smile size={18} />
-          </button>
+                if (file.size > MAX_ATTACHMENT_BYTES) {
+                  setAttachment(null);
+                  setAttachmentError("You can't send files larger than 100 MB.");
+                  return;
+                }
+                setAttachment(file);
+                setAttachmentError(null);
+              }}
+              placeholder={mode === "SERVER" ? `Message #${channelName}` : `Message @${channelName}`}
+              className="w-full bg-transparent text-sm text-white placeholder:text-[#dadde5] outline-none"
+            />
+            <button type="button" className="text-discord-muted hover:text-white" onClick={() => setShowPicker((v) => !v)}>
+              <Smile size={18} />
+            </button>
+          </div>
         </div>
+        {attachmentError ? <p className="mt-1 text-xs text-[#ed4245]">{attachmentError}</p> : null}
         {mentionMenuOpen ? (
           <div className="absolute bottom-14 left-4 right-4 z-30 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg">
             <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
@@ -705,7 +1618,6 @@ const ChatArea = ({
             </div>
           </div>
         ) : null}
-        {attachment ? <p className="mt-1 text-xs text-discord-muted">Selected: {attachment.name}</p> : null}
 
         {showPicker ? (
           <div className="absolute bottom-16 right-4 z-20">

@@ -1,15 +1,29 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteDMMessage = exports.createDMMessage = exports.listDMMessages = exports.createOrGetDM = exports.listDMs = void 0;
+exports.deleteDMMessage = exports.editDMMessage = exports.createDMMessage = exports.listDMMessages = exports.createOrGetDM = exports.listDMs = void 0;
+const node_fs_1 = __importDefault(require("node:fs"));
+const node_path_1 = __importDefault(require("node:path"));
 const prisma_1 = require("../lib/prisma");
 const prismaAny = prisma_1.prisma;
 const SYSTEM_USERNAME = "Discrope";
+const deleteAttachmentIfLocal = (attachmentUrl) => {
+    if (!attachmentUrl || !attachmentUrl.startsWith("/uploads/")) {
+        return;
+    }
+    const filePath = node_path_1.default.resolve(process.cwd(), attachmentUrl.slice(1));
+    if (node_fs_1.default.existsSync(filePath)) {
+        node_fs_1.default.unlinkSync(filePath);
+    }
+};
 const listDMs = async (req, res) => {
     const userId = req.user.id;
     const channels = await prismaAny.dMChannel.findMany({
         where: { participants: { some: { id: userId } } },
         include: {
-            participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true } }
+            participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } }
         }
     });
     res.json({ channels });
@@ -35,7 +49,7 @@ const createOrGetDM = async (req, res) => {
         where: {
             AND: ids.map((id) => ({ participants: { some: { id } } }))
         },
-        include: { participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true } } }
+        include: { participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
     });
     if (existing && existing.participants.length === ids.length) {
         res.json({ channel: existing });
@@ -45,7 +59,7 @@ const createOrGetDM = async (req, res) => {
         data: {
             participants: { connect: ids.map((id) => ({ id })) }
         },
-        include: { participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true } } }
+        include: { participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
     });
     res.status(201).json({ channel });
 };
@@ -53,9 +67,9 @@ exports.createOrGetDM = createOrGetDM;
 const listDMMessages = async (req, res) => {
     const userId = req.user.id;
     const { dmChannelId } = req.params;
-    const channel = await prisma_1.prisma.dMChannel.findFirst({
+    const channel = await prismaAny.dMChannel.findFirst({
         where: { id: dmChannelId, participants: { some: { id: userId } } },
-        select: { id: true }
+        select: { id: true, participants: { select: { id: true } } }
     });
     if (!channel) {
         res.status(404).json({ message: "DM channel not found" });
@@ -63,7 +77,16 @@ const listDMMessages = async (req, res) => {
     }
     const messages = await prismaAny.dMMessage.findMany({
         where: { dmChannelId },
-        include: { author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } } },
+        include: {
+            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+            replyTo: {
+                select: {
+                    id: true,
+                    content: true,
+                    author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
+                }
+            }
+        },
         orderBy: { createdAt: "asc" }
     });
     res.json({ messages });
@@ -72,42 +95,95 @@ exports.listDMMessages = listDMMessages;
 const createDMMessage = async (req, res) => {
     const userId = req.user.id;
     const { dmChannelId } = req.params;
-    const { content } = req.body;
+    const { content, replyToId } = req.body;
     const attachmentUrl = req.file ? `/uploads/attachments/${req.file.filename}` : null;
     const attachmentName = req.file?.originalname ?? null;
     if (!content?.trim() && !attachmentUrl) {
         res.status(400).json({ message: "Message cannot be empty" });
         return;
     }
-    const channel = await prisma_1.prisma.dMChannel.findFirst({
+    const channel = await prismaAny.dMChannel.findFirst({
         where: { id: dmChannelId, participants: { some: { id: userId } } },
-        select: { id: true }
+        select: { id: true, participants: { select: { id: true } } }
     });
     if (!channel) {
         res.status(404).json({ message: "DM channel not found" });
         return;
     }
+    if (replyToId) {
+        const replyTarget = await prismaAny.dMMessage.findFirst({
+            where: { id: replyToId, dmChannelId },
+            select: { id: true }
+        });
+        if (!replyTarget) {
+            res.status(400).json({ message: "Reply target not found" });
+            return;
+        }
+    }
     const message = await prismaAny.dMMessage.create({
-        data: { dmChannelId, authorId: userId, content: content ?? "", attachmentUrl, attachmentName },
-        include: { author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true } } }
+        data: { dmChannelId, authorId: userId, content: content ?? "", attachmentUrl, attachmentName, replyToId: replyToId ?? null },
+        include: {
+            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+            replyTo: {
+                select: {
+                    id: true,
+                    content: true,
+                    author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
+                }
+            }
+        }
     });
     const io = req.app.get("io");
-    io.to(`dm:${dmChannelId}`).emit("dm:message:new", message);
+    for (const participant of channel.participants) {
+        io.to(`user:${participant.id}`).emit("dm:message:new", message);
+    }
     res.status(201).json({ message });
 };
 exports.createDMMessage = createDMMessage;
+const editDMMessage = async (req, res) => {
+    const userId = req.user.id;
+    const { dmChannelId, messageId } = req.params;
+    const { content } = req.body;
+    const existing = await prismaAny.dMMessage.findUnique({
+        where: { id: messageId },
+        select: { id: true, authorId: true, dmChannelId: true }
+    });
+    if (!existing || existing.dmChannelId !== dmChannelId || existing.authorId !== userId) {
+        res.status(403).json({ message: "Cannot edit this message" });
+        return;
+    }
+    const message = await prismaAny.dMMessage.update({
+        where: { id: messageId },
+        data: { content, editedAt: new Date() },
+        include: {
+            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+            replyTo: {
+                select: {
+                    id: true,
+                    content: true,
+                    author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
+                }
+            }
+        }
+    });
+    const io = req.app.get("io");
+    io.to(`dm:${dmChannelId}`).emit("dm:message:updated", message);
+    res.json({ message });
+};
+exports.editDMMessage = editDMMessage;
 const deleteDMMessage = async (req, res) => {
     const userId = req.user.id;
     const { dmChannelId, messageId } = req.params;
     const message = await prismaAny.dMMessage.findUnique({
         where: { id: messageId },
-        select: { authorId: true, dmChannelId: true }
+        select: { authorId: true, dmChannelId: true, attachmentUrl: true }
     });
     if (!message || message.dmChannelId !== dmChannelId || message.authorId !== userId) {
         res.status(403).json({ message: "Cannot delete this message" });
         return;
     }
     await prismaAny.dMMessage.delete({ where: { id: messageId } });
+    deleteAttachmentIfLocal(message.attachmentUrl);
     const io = req.app.get("io");
     io.to(`dm:${dmChannelId}`).emit("dm:message:deleted", { id: messageId, dmChannelId });
     res.json({ deleted: true });
