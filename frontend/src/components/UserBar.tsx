@@ -1,4 +1,5 @@
 import { Settings } from "lucide-react";
+import { resolveMediaUrl } from "../lib/media";
 import type { User } from "../types";
 import { formatStatusLabel } from "../lib/formatStatus";
 import StatusDot from "./StatusDot";
@@ -22,7 +23,7 @@ const UserBar = ({ user, onOpenSettings, onOpenOwnProfile }: Props): JSX.Element
         title="View profile"
       >
         <div className="relative h-8 w-8 shrink-0">
-          <img src={user.avatarUrl || DEFAULT_AVATAR_URL} alt={displayName} className="h-8 w-8 rounded-full" />
+          <img src={resolveMediaUrl(user.avatarUrl) || DEFAULT_AVATAR_URL} alt={displayName} className="h-8 w-8 rounded-full" />
           <span className="absolute -bottom-1 -right-0.5">
             <StatusDot status={user.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#232428]" />
           </span>

@@ -1,4 +1,5 @@
 import { Plus, Compass, LogOut } from "lucide-react";
+import { resolveMediaUrl } from "../lib/media";
 import type { DMChannel, Server, User } from "../types";
 
 const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
@@ -77,7 +78,7 @@ const ServerBar = ({
               >
                 {server.iconUrl ? (
                   <div className="h-12 w-12">
-                    <img src={server.iconUrl} alt={server.name} className="h-full w-full object-contain" />
+                    <img src={resolveMediaUrl(server.iconUrl) || DEFAULT_AVATAR_URL} alt={server.name} className="h-full w-full object-contain" />
                   </div>
                 ) : (
                   <span>{server.name.slice(0, 2).toUpperCase()}</span>

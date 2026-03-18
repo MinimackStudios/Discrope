@@ -1,4 +1,5 @@
 import { type MouseEvent, useEffect, useState } from "react";
+import { resolveMediaUrl } from "../lib/media";
 import type { ServerMember, User } from "../types";
 import { formatStatusLabel } from "../lib/formatStatus";
 import StatusDot from "./StatusDot";
@@ -71,7 +72,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                 >
                   <div className="relative h-8 w-8 shrink-0">
                     <img
-                      src={member.user.avatarUrl || DEFAULT_AVATAR_URL}
+                      src={resolveMediaUrl(member.user.avatarUrl) || DEFAULT_AVATAR_URL}
                       alt={member.user.username}
                       className="h-8 w-8 rounded-full"
                     />
@@ -104,7 +105,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                 >
                   <div className="relative h-8 w-8 shrink-0">
                     <img
-                      src={member.user.avatarUrl || DEFAULT_AVATAR_URL}
+                      src={resolveMediaUrl(member.user.avatarUrl) || DEFAULT_AVATAR_URL}
                       alt={member.user.username}
                       className="h-8 w-8 rounded-full opacity-70"
                     />

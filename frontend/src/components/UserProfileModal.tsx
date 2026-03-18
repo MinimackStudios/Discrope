@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { User } from "../types";
 import { AnimatePresence, motion } from "framer-motion";
 import { formatStatusLabel } from "../lib/formatStatus";
+import { resolveMediaUrl } from "../lib/media";
 import { useBackdropClose } from "../lib/useBackdropClose";
 import StatusDot from "./StatusDot";
 
@@ -89,7 +90,7 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
         <div className="relative p-4">
           <div className="absolute -top-10 h-20 w-20">
             <img
-              src={profileUser.avatarUrl || DEFAULT_AVATAR_URL}
+              src={resolveMediaUrl(profileUser.avatarUrl) || DEFAULT_AVATAR_URL}
               alt={displayName}
               className="h-20 w-20 rounded-full border-4 border-[#2b2d31]"
             />

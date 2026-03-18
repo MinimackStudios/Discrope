@@ -1,4 +1,5 @@
 import type { User } from "../types";
+import { resolveMediaUrl } from "../lib/media";
 import { formatStatusLabel } from "../lib/formatStatus";
 import StatusDot from "./StatusDot";
 
@@ -17,7 +18,7 @@ const DMProfilePanel = ({ user }: Props): JSX.Element => {
           <>
             <div className="relative -mt-10 mb-3 h-20 w-20">
               <img
-                src={user.avatarUrl || DEFAULT_AVATAR_URL}
+                src={resolveMediaUrl(user.avatarUrl) || DEFAULT_AVATAR_URL}
                 alt={user.nickname?.trim() || user.username}
                 className="h-20 w-20 rounded-full border-4 border-[#2b2d31] object-cover"
               />

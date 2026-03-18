@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Download, Edit3, FileAudio2, Paperclip, Pause, Play, Reply, Smile, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useChatStore } from "../lib/stores/chatStore";
 import { api } from "../lib/api";
+import { resolveMediaUrl } from "../lib/media";
 import { getSocket } from "../lib/socket";
 import OpenGraphEmbed from "./OpenGraphEmbed";
 import StatusDot from "./StatusDot";
@@ -228,7 +229,7 @@ const InviteEmbed = ({ inviteCode }: { inviteCode: string }): JSX.Element | null
     <div className="mt-1.5 w-full max-w-[320px] rounded-md border border-[#3f4248] bg-[#2b2d31] p-2">
       <div className="flex items-center gap-2">
         <img
-          src={invite.server.iconUrl || DEFAULT_AVATAR_URL}
+          src={resolveMediaUrl(invite.server.iconUrl) || DEFAULT_AVATAR_URL}
           alt={invite.server.name}
           className="h-8 w-8 rounded-lg object-cover"
         />
@@ -1072,23 +1073,25 @@ const ChatArea = ({
       return null;
     }
 
+    const resolvedAttachmentUrl = resolveMediaUrl(attachmentUrl) || attachmentUrl;
+
     const name = (attachmentName ?? "").toLowerCase();
     const imageExt = /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
     const videoExt = /\.(mp4|webm|mov|m4v)$/i.test(name);
     const audioExt = /\.(mp3|wav|ogg|m4a|flac)$/i.test(name);
 
     if (imageExt) {
-      return <img src={attachmentUrl} alt={attachmentName ?? "attachment"} className="mt-2 max-h-80 rounded-md object-cover" />;
+      return <img src={resolvedAttachmentUrl} alt={attachmentName ?? "attachment"} className="mt-2 max-h-80 rounded-md object-cover" />;
     }
     if (videoExt) {
-      return <VideoAttachmentPlayer src={attachmentUrl} attachmentName={attachmentName} />;
+      return <VideoAttachmentPlayer src={resolvedAttachmentUrl} attachmentName={attachmentName} />;
     }
     if (audioExt) {
-      return <AudioAttachmentPlayer src={attachmentUrl} attachmentName={attachmentName} />;
+      return <AudioAttachmentPlayer src={resolvedAttachmentUrl} attachmentName={attachmentName} />;
     }
 
     return (
-      <a href={attachmentUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded bg-[#2b2d31] px-2 py-1 text-xs text-[#00a8fc]">
+      <a href={resolvedAttachmentUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded bg-[#2b2d31] px-2 py-1 text-xs text-[#00a8fc]">
         Attachment: {attachmentName || "file"}
       </a>
     );
@@ -1257,7 +1260,7 @@ const ChatArea = ({
                     className={`shrink-0 self-start ${hasReplyPreview ? "mt-4" : ""}`}
                   >
                     <img
-                      src={message.author.avatarUrl || DEFAULT_AVATAR_URL}
+                      src={resolveMediaUrl(message.author.avatarUrl) || DEFAULT_AVATAR_URL}
                       alt={authorName}
                       className="h-10 w-10 rounded-full"
                     />
@@ -1270,7 +1273,7 @@ const ChatArea = ({
                         <span className="absolute left-0 top-0 h-3 w-4 rounded-tl-md border-l-2 border-t-2 border-[#63656e]" />
                       </span>
                       <img
-                        src={message.replyTo.author.avatarUrl || DEFAULT_AVATAR_URL}
+                        src={resolveMediaUrl(message.replyTo.author.avatarUrl) || DEFAULT_AVATAR_URL}
                         alt={message.replyTo.author.nickname?.trim() || message.replyTo.author.username}
                         className="h-4 w-4 shrink-0 rounded-full"
                       />
@@ -1606,7 +1609,7 @@ const ChatArea = ({
                     }}
                   >
                     <div className="relative h-8 w-8 shrink-0">
-                      <img src={member.user.avatarUrl || DEFAULT_AVATAR_URL} alt={display} className="h-8 w-8 rounded-full" />
+                      <img src={resolveMediaUrl(member.user.avatarUrl) || DEFAULT_AVATAR_URL} alt={display} className="h-8 w-8 rounded-full" />
                       <span className="absolute -bottom-1 -right-0.5">
                         <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#111214]" />
                       </span>

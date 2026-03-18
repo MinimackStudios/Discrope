@@ -1,4 +1,5 @@
 import type { DMChannel, User } from "../types";
+import { resolveMediaUrl } from "../lib/media";
 import StatusDot from "./StatusDot";
 import { X } from "lucide-react";
 
@@ -41,7 +42,7 @@ const DMList = ({ dms, me, activeDMId, onOpenDM, onRemoveDM, unreadDMs, fullHeig
               >
                 <div className="relative h-8 w-8 shrink-0">
                   <img
-                    src={other?.avatarUrl || DEFAULT_AVATAR_URL}
+                    src={resolveMediaUrl(other?.avatarUrl) || DEFAULT_AVATAR_URL}
                     alt={display || "DM"}
                     className="h-8 w-8 rounded-full object-cover"
                   />
