@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import type { DMChannel, Server, User } from "../types";
 import StatusDot from "./StatusDot";
 
+const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
+
 type Props = {
   servers: Server[];
   activeServerId: string | null;
@@ -55,7 +57,7 @@ const ServerBar = ({
                 title={`New message from ${otherName}`}
                 onClick={() => onSelectDM(dm.id)}
               >
-                <img src={other?.avatarUrl || "/default-avatar.svg"} alt={otherName} className="h-full w-full object-cover" />
+                <img src={other?.avatarUrl || DEFAULT_AVATAR_URL} alt={otherName} className="h-full w-full object-cover" />
                 {other ? (
                   <span className="absolute -bottom-0.5 -right-0.5">
                     <StatusDot status={other.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-discord-dark0" />

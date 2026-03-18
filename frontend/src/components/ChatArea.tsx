@@ -29,6 +29,7 @@ type MemberContextMenu = {
 };
 
 const SYSTEM_USERNAME = "Discrope";
+const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
 
 const ChatArea = ({
   me,
@@ -430,7 +431,7 @@ const ChatArea = ({
                     className={`shrink-0 self-start ${hasReplyPreview ? "mt-4" : ""}`}
                   >
                     <img
-                      src={message.author.avatarUrl || "/default-avatar.svg"}
+                      src={message.author.avatarUrl || DEFAULT_AVATAR_URL}
                       alt={authorName}
                       className="h-10 w-10 rounded-full"
                     />
@@ -443,7 +444,7 @@ const ChatArea = ({
                         <span className="absolute left-0 top-0 h-3 w-4 rounded-tl-md border-l-2 border-t-2 border-[#63656e]" />
                       </span>
                       <img
-                        src={message.replyTo.author.avatarUrl || "/default-avatar.svg"}
+                        src={message.replyTo.author.avatarUrl || DEFAULT_AVATAR_URL}
                         alt={message.replyTo.author.nickname?.trim() || message.replyTo.author.username}
                         className="h-4 w-4 shrink-0 rounded-full"
                       />
@@ -692,7 +693,7 @@ const ChatArea = ({
                     }}
                   >
                     <div className="relative h-8 w-8 shrink-0">
-                      <img src={member.user.avatarUrl || "/default-avatar.svg"} alt={display} className="h-8 w-8 rounded-full" />
+                      <img src={member.user.avatarUrl || DEFAULT_AVATAR_URL} alt={display} className="h-8 w-8 rounded-full" />
                       <span className="absolute -bottom-1 -right-0.5">
                         <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#111214]" />
                       </span>

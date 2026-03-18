@@ -1,6 +1,8 @@
 import type { User } from "../types";
 import StatusDot from "./StatusDot";
 
+const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
+
 type Props = {
   user: User | null;
   open: boolean;
@@ -29,7 +31,7 @@ const UserProfileModal = ({ user, open, me, friends, onClose, onAddFriend, onSta
         <div className="relative p-4">
           <div className="absolute -top-10 h-20 w-20">
             <img
-              src={user.avatarUrl || "/default-avatar.svg"}
+              src={user.avatarUrl || DEFAULT_AVATAR_URL}
               alt={displayName}
               className="h-20 w-20 rounded-full border-4 border-[#2b2d31]"
             />

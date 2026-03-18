@@ -2,6 +2,8 @@ import { Headphones, Mic, Settings } from "lucide-react";
 import type { User } from "../types";
 import StatusDot from "./StatusDot";
 
+const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
+
 type Props = {
   user: User;
   muted: boolean;
@@ -23,7 +25,7 @@ const UserBar = ({ user, muted, deafened, onToggleMute, onToggleDeafen, onOpenSe
         title="View profile"
       >
         <div className="relative h-8 w-8 shrink-0">
-          <img src={user.avatarUrl || "/default-avatar.svg"} alt={displayName} className="h-8 w-8 rounded-full" />
+          <img src={user.avatarUrl || DEFAULT_AVATAR_URL} alt={displayName} className="h-8 w-8 rounded-full" />
           <span className="absolute -bottom-1 -right-0.5">
             <StatusDot status={user.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#232428]" />
           </span>

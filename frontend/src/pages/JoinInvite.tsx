@@ -3,6 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuthStore } from "../lib/stores/authStore";
 
+const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
+
 const JoinInvitePage = (): JSX.Element => {
   const { inviteCode } = useParams();
   const navigate = useNavigate();
@@ -66,7 +68,7 @@ const JoinInvitePage = (): JSX.Element => {
           <>
             <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-discord-muted">You have been invited to join a server</p>
             <div className="mb-4 flex items-center gap-3">
-              <img src={invite.server.iconUrl || "/default-avatar.svg"} alt={invite.server.name} className="h-14 w-14 rounded-2xl" />
+              <img src={invite.server.iconUrl || DEFAULT_AVATAR_URL} alt={invite.server.name} className="h-14 w-14 rounded-2xl" />
               <div>
                 <h1 className="text-xl font-bold text-white">{invite.server.name}</h1>
                 <p className="text-xs text-discord-muted">{invite.server.memberCount} members</p>

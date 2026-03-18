@@ -5,6 +5,7 @@ import AvatarCropModal from "./AvatarCropModal";
 import StatusDot from "./StatusDot";
 
 const SYSTEM_USERNAME = "Discrope";
+const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
 
 type BannedUser = {
   userId: string;
@@ -175,7 +176,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
                 {members.map((member) => (
                   <div key={member.userId} className="flex items-center gap-3 rounded bg-[#1e1f22] px-3 py-2">
                     <div className="relative h-8 w-8 shrink-0">
-                      <img src={member.user.avatarUrl || "/default-avatar.svg"} alt={member.user.username} className="h-8 w-8 rounded-full" />
+                      <img src={member.user.avatarUrl || DEFAULT_AVATAR_URL} alt={member.user.username} className="h-8 w-8 rounded-full" />
                       <span className="absolute -bottom-0.5 -right-0.5">
                         <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#1e1f22]" />
                       </span>
@@ -211,7 +212,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
                 {bans.map((ban) => (
                   <div key={ban.userId} className="flex items-center gap-3 rounded bg-[#1e1f22] px-3 py-2">
                     <div className="relative h-8 w-8 shrink-0">
-                      <img src={ban.user.avatarUrl || "/default-avatar.svg"} alt={ban.user.username} className="h-8 w-8 rounded-full" />
+                      <img src={ban.user.avatarUrl || DEFAULT_AVATAR_URL} alt={ban.user.username} className="h-8 w-8 rounded-full" />
                       <span className="absolute -bottom-0.5 -right-0.5">
                         <StatusDot status={ban.user.status ?? "OFFLINE"} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#1e1f22]" />
                       </span>

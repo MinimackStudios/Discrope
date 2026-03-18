@@ -4,6 +4,7 @@ import type { ServerMember, User } from "../types";
 import StatusDot from "./StatusDot";
 
 const SYSTEM_USERNAME = "Discrope";
+const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
 
 type Props = {
   members: ServerMember[];
@@ -70,7 +71,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                 >
                   <div className="relative h-8 w-8 shrink-0">
                     <img
-                      src={member.user.avatarUrl || "/default-avatar.svg"}
+                      src={member.user.avatarUrl || DEFAULT_AVATAR_URL}
                       alt={member.user.username}
                       className="h-8 w-8 rounded-full"
                     />
@@ -105,7 +106,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                 >
                   <div className="relative h-8 w-8 shrink-0">
                     <img
-                      src={member.user.avatarUrl || "/default-avatar.svg"}
+                      src={member.user.avatarUrl || DEFAULT_AVATAR_URL}
                       alt={member.user.username}
                       className="h-8 w-8 rounded-full opacity-70"
                     />
