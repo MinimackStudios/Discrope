@@ -186,6 +186,9 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                   <option value="DND">Do Not Disturb</option>
                   <option value="INVISIBLE">Invisible</option>
                 </select>
+                <span className="mt-1 block text-[11px] text-discord-warning">
+                  Statuses currently do not persist between refreshes. This will be fixed on March 31st, 2026.
+                </span>
               </label>
               <label className="mt-3 block text-xs text-discord-muted">
                 Custom Status
