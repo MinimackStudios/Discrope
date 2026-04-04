@@ -67,7 +67,8 @@ const MainPage = (): JSX.Element => {
     regenerateInvite,
     markDMRead,
     hideDM,
-    bindSocketEvents
+    bindSocketEvents,
+    refreshOfflineUnreads
   } = useChatStore();
 
   const notices = useChatStore((s) => s.notices);
@@ -179,10 +180,11 @@ const MainPage = (): JSX.Element => {
   }, [servers, mentionUnreadByChannel]);
 
   useEffect(() => {
-    void loadServers();
-    void loadFriends();
-    void loadDMs();
-  }, [loadServers, loadFriends, loadDMs]);
+    void (async () => {
+      await Promise.all([loadServers(), loadFriends(), loadDMs()]);
+      void refreshOfflineUnreads();
+    })();
+  }, [loadServers, loadFriends, loadDMs, refreshOfflineUnreads]);
 
   useEffect(() => {
     bindSocketEvents(user);

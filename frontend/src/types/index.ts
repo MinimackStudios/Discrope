@@ -57,6 +57,7 @@ export type Message = {
   editedAt?: string | null;
   createdAt: string;
   isPinned?: boolean;
+  pending?: boolean;
   replyTo?: {
     id: string;
     content: string;
@@ -103,6 +104,7 @@ export type DMMessage = {
   authorId: string;
   editedAt?: string | null;
   createdAt: string;
+  pending?: boolean;
   replyTo?: {
     id: string;
     content: string;

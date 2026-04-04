@@ -4,6 +4,7 @@ import {
   acceptFriendRequest,
   deleteSelf,
   findUsers,
+  getUnreadCounts,
   listFriends,
   rejectFriendRequest,
   removeFriend,
@@ -26,5 +27,6 @@ router.post("/friends/reject/:requestId", rejectFriendRequest);
 router.delete("/friends/:friendId", removeFriend);
 router.delete("/me", deleteSelf);
 router.patch("/me", uploadUserProfile, updateSelf);
+router.post("/me/unread-counts", getUnreadCounts);
 
 export default router;

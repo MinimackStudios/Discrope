@@ -262,6 +262,67 @@ export const removeFriend = async (req: Request, res: Response): Promise<void> =
   res.json({ removed: true });
 };
 
+export const getUnreadCounts = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const { channels = {}, dms = {} } = req.body as {
+    channels?: Record<string, string>;
+    dms?: Record<string, string>;
+  };
+
+  const channelCounts: Record<string, number> = {};
+  const dmCounts: Record<string, number> = {};
+
+  const channelIds = Object.keys(channels);
+  if (channelIds.length > 0) {
+    // Verify user membership for all requested channels at once
+    const accessible = await prisma.channel.findMany({
+      where: { id: { in: channelIds }, server: { members: { some: { userId } } } },
+      select: { id: true }
+    });
+    const accessibleIds = new Set(accessible.map((c: { id: string }) => c.id));
+
+    // Batch-fetch lastSeen message timestamps
+    const lastSeenIds = channelIds.filter(id => accessibleIds.has(id) && channels[id]).map(id => channels[id]);
+    const lastSeenMessages = lastSeenIds.length > 0
+      ? await prisma.message.findMany({ where: { id: { in: lastSeenIds } }, select: { id: true, createdAt: true } })
+      : [];
+    const createdAtById = new Map(lastSeenMessages.map((m: { id: string; createdAt: Date }) => [m.id, m.createdAt]));
+
+    for (const channelId of accessibleIds) {
+      const lastSeenId = channels[channelId];
+      if (!lastSeenId) { channelCounts[channelId] = 0; continue; }
+      const lastSeenAt = createdAtById.get(lastSeenId);
+      if (!lastSeenAt) { channelCounts[channelId] = 0; continue; }
+      channelCounts[channelId] = await prisma.message.count({ where: { channelId, createdAt: { gt: lastSeenAt } } });
+    }
+  }
+
+  const dmIds = Object.keys(dms);
+  if (dmIds.length > 0) {
+    const accessibleDMs = await prismaAny.dMChannel.findMany({
+      where: { id: { in: dmIds }, participants: { some: { id: userId } } },
+      select: { id: true }
+    });
+    const accessibleDMIds = new Set((accessibleDMs as Array<{ id: string }>).map(d => d.id));
+
+    const dmLastSeenIds = dmIds.filter(id => accessibleDMIds.has(id) && dms[id]).map(id => dms[id]);
+    const dmLastSeenMessages = dmLastSeenIds.length > 0
+      ? await prismaAny.dMMessage.findMany({ where: { id: { in: dmLastSeenIds } }, select: { id: true, createdAt: true } })
+      : [];
+    const dmCreatedAtById = new Map((dmLastSeenMessages as Array<{ id: string; createdAt: Date }>).map(m => [m.id, m.createdAt]));
+
+    for (const dmId of accessibleDMIds) {
+      const lastSeenId = dms[dmId];
+      if (!lastSeenId) { dmCounts[dmId] = 0; continue; }
+      const lastSeenAt = dmCreatedAtById.get(lastSeenId);
+      if (!lastSeenAt) { dmCounts[dmId] = 0; continue; }
+      dmCounts[dmId] = await prismaAny.dMMessage.count({ where: { dmChannelId: dmId, createdAt: { gt: lastSeenAt } } });
+    }
+  }
+
+  res.json({ channels: channelCounts, dms: dmCounts });
+};
+
 export const deleteSelf = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.id;
 

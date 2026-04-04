@@ -12,6 +12,8 @@ const LAST_CHANNEL_BY_SERVER_STORAGE_KEY = "windcord_last_channel_by_server_v1";
 const NOTIF_SOUND_STORAGE_KEY = "windcord_notif_sound_v1";
 const UNREAD_DMS_STORAGE_KEY = "windcord_unread_dms_v1";
 const LAST_UNREAD_MSG_STORAGE_KEY = "windcord_last_unread_msg_v1";
+const LAST_SEEN_BY_CHANNEL_KEY = "windcord_last_seen_by_channel_v1";
+const LAST_SEEN_BY_DM_KEY = "windcord_last_seen_by_dm_v1";
 const NOTIFICATION_SOUND_DEFAULT_URL = `${import.meta.env.BASE_URL}notif.mp3`;
 const NOTIFICATION_SOUND_ALT_URL = `${import.meta.env.BASE_URL}notifalt.mp3`;
 
@@ -64,6 +66,27 @@ if (typeof document !== "undefined") {
   document.addEventListener("click", onFirstUserInteraction, { capture: true });
   document.addEventListener("keydown", onFirstUserInteraction, { capture: true });
   document.addEventListener("touchstart", onFirstUserInteraction, { capture: true });
+}
+
+let tabHiddenAt: number | null = null;
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      tabHiddenAt = Date.now();
+    } else if (document.visibilityState === "visible" && tabHiddenAt !== null) {
+      const hiddenMs = Date.now() - tabHiddenAt;
+      tabHiddenAt = null;
+      // Only re-fetch if the tab was hidden long enough that we might have missed messages
+      if (hiddenMs > 30_000) {
+        const store = useChatStore.getState();
+        if (store.activeChannelId) {
+          void store.loadMessages(store.activeChannelId);
+        } else if (store.mode === "DM" && store.activeDMId) {
+          void store.loadDMMessages(store.activeDMId);
+        }
+      }
+    }
+  });
 }
 const processedSocketEventKeys: string[] = [];
 const processedSocketEventSet = new Set<string>();
@@ -142,6 +165,32 @@ const persistLastUnreadMessageIds = (ids: Record<string, string>): void => {
     return;
   }
   window.localStorage.setItem(LAST_UNREAD_MSG_STORAGE_KEY, JSON.stringify(ids));
+};
+
+const loadLastSeenByChannel = (): Record<string, string> => {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LAST_SEEN_BY_CHANNEL_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch { return {}; }
+};
+
+const persistLastSeenByChannel = (ids: Record<string, string>): void => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(LAST_SEEN_BY_CHANNEL_KEY, JSON.stringify(ids));
+};
+
+const loadLastSeenByDM = (): Record<string, string> => {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LAST_SEEN_BY_DM_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch { return {}; }
+};
+
+const persistLastSeenByDM = (ids: Record<string, string>): void => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(LAST_SEEN_BY_DM_KEY, JSON.stringify(ids));
 };
 
 const persistUnreads = (unreadByChannel: Record<string, number>, mentionUnreadByChannel: Record<string, number>): void => {
@@ -397,6 +446,7 @@ type ChatState = {
   markDMRead: (dmId: string) => void;
   hideDM: (dmId: string) => void;
   bindSocketEvents: (currentUser?: User | null) => void;
+  refreshOfflineUnreads: () => Promise<void>;
 };
 
 export type SystemNotice = {
@@ -617,11 +667,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   loadMessages: async (channelId) => {
     const { data } = await api.get(`/chat/channels/${channelId}/messages`);
-    const previousUnreadCount = get().unreadByChannel[channelId] ?? 0;
-    const firstUnreadByCount = previousUnreadCount > 0
-      ? (data.messages[Math.max(data.messages.length - previousUnreadCount, 0)]?.id ?? null)
-      : null;
-    const focusMessageId = get().lastUnreadMessageIdByChannel[channelId] ?? firstUnreadByCount;
+    const msgs = data.messages as Message[];
+
+    // If socket-based unreads are 0, check last-seen in localStorage to catch
+    // messages sent while the tab was closed/disconnected.
+    let previousUnreadCount = get().unreadByChannel[channelId] ?? 0;
+    let focusMessageId: string | null = get().lastUnreadMessageIdByChannel[channelId] ?? null;
+
+    if (previousUnreadCount === 0 && !focusMessageId) {
+      const lastSeenId = loadLastSeenByChannel()[channelId];
+      if (lastSeenId) {
+        const lastSeenIdx = msgs.findIndex((m) => m.id === lastSeenId);
+        if (lastSeenIdx !== -1 && lastSeenIdx < msgs.length - 1) {
+          previousUnreadCount = msgs.length - 1 - lastSeenIdx;
+          focusMessageId = msgs[lastSeenIdx + 1]?.id ?? null;
+        }
+      }
+    }
+
+    if (!focusMessageId && previousUnreadCount > 0) {
+      focusMessageId = msgs[Math.max(msgs.length - previousUnreadCount, 0)]?.id ?? null;
+    }
+
+    // Update last-seen to the newest message we just loaded
+    const lastMsg = msgs[msgs.length - 1];
+    if (lastMsg) {
+      persistLastSeenByChannel({ ...loadLastSeenByChannel(), [channelId]: lastMsg.id });
+    }
+
     const nextUnread = { ...get().unreadByChannel, [channelId]: 0 };
     const nextMentionUnread = { ...get().mentionUnreadByChannel, [channelId]: 0 };
     const nextUnreadMessageIds = { ...get().lastUnreadMessageIdByChannel };
@@ -629,7 +702,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     persistUnreads(nextUnread, nextMentionUnread);
     persistLastUnreadMessageIds(nextUnreadMessageIds);
     set({
-      messages: data.messages,
+      messages: msgs,
       hasOlderMessages: data.hasOlder === true,
       unreadByChannel: nextUnread,
       mentionUnreadByChannel: nextMentionUnread,
@@ -639,10 +712,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   loadDMMessages: async (dmChannelId, previousUnreadCount = 0) => {
     const { data } = await api.get(`/dms/${dmChannelId}/messages`);
-    const focusMessageId = previousUnreadCount > 0
-      ? (data.messages[Math.max(data.messages.length - previousUnreadCount, 0)]?.id ?? null)
+    const msgs = data.messages as DMMessage[];
+
+    // If caller passed no socket-based unread count, check last-seen in localStorage
+    let unreadCount = previousUnreadCount;
+    let focusMessageId: string | null = previousUnreadCount > 0
+      ? (msgs[Math.max(msgs.length - previousUnreadCount, 0)]?.id ?? null)
       : null;
-    set({ dmMessages: data.messages, hasOlderDMMessages: data.hasOlder === true, dmChannelOpenFocusMessageId: focusMessageId });
+
+    if (unreadCount === 0 && !focusMessageId) {
+      const lastSeenId = loadLastSeenByDM()[dmChannelId];
+      if (lastSeenId) {
+        const lastSeenIdx = msgs.findIndex((m) => m.id === lastSeenId);
+        if (lastSeenIdx !== -1 && lastSeenIdx < msgs.length - 1) {
+          unreadCount = msgs.length - 1 - lastSeenIdx;
+          focusMessageId = msgs[lastSeenIdx + 1]?.id ?? null;
+        }
+      }
+    }
+
+    // Update last-seen to the newest message loaded
+    const lastMsg = msgs[msgs.length - 1];
+    if (lastMsg) {
+      persistLastSeenByDM({ ...loadLastSeenByDM(), [dmChannelId]: lastMsg.id });
+    }
+
+    set({ dmMessages: msgs, hasOlderDMMessages: data.hasOlder === true, dmChannelOpenFocusMessageId: focusMessageId });
   },
   loadOlderMessages: async () => {
     const channelId = get().activeChannelId;
@@ -708,15 +803,67 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    const { data } = await api.post(`/chat/channels/${channelId}/messages`, { content, replyToId });
-    set((state) => ({
-      messages: state.messages.some((m) => m.id === data.message.id) ? state.messages : [...state.messages, data.message]
-    }));
+    // Optimistic: show message immediately with pending flag
+    const currentUser = useAuthStore.getState().user;
+    const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    if (currentUser) {
+      const replyToMsg = replyToId ? (get().messages.find((m) => m.id === replyToId) ?? null) : null;
+      const tempMessage: Message = {
+        id: tempId,
+        content,
+        channelId,
+        authorId: currentUser.id,
+        createdAt: new Date().toISOString(),
+        author: currentUser,
+        reactions: [],
+        replyTo: replyToMsg
+          ? { id: replyToMsg.id, content: replyToMsg.content, attachmentUrl: replyToMsg.attachmentUrl ?? null, attachmentName: replyToMsg.attachmentName ?? null, author: replyToMsg.author }
+          : null,
+        pending: true,
+      };
+      set((state) => ({ messages: [...state.messages, tempMessage] }));
+    }
+
+    try {
+      const { data } = await api.post(`/chat/channels/${channelId}/messages`, { content, replyToId });
+      set((state) => ({
+        messages: state.messages
+          .filter((m) => m.id !== tempId)
+          .concat(state.messages.some((m) => m.id === data.message.id) ? [] : [data.message])
+      }));
+    } catch (err) {
+      set((state) => ({ messages: state.messages.filter((m) => m.id !== tempId) }));
+      throw err;
+    }
   },
   sendDMMessage: async (content, replyToId, attachment) => {
     const dmChannelId = get().activeDMId;
     if (!dmChannelId || (!content.trim() && !attachment)) {
       return;
+    }
+
+    // Optimistic for text-only DM messages
+    let tempId: string | null = null;
+    if (!attachment) {
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser) {
+        tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const replyToMsg = replyToId ? (get().dmMessages.find((m) => m.id === replyToId) ?? null) : null;
+        const tempMessage: DMMessage = {
+          id: tempId,
+          content,
+          dmChannelId,
+          authorId: currentUser.id,
+          createdAt: new Date().toISOString(),
+          author: currentUser,
+          reactions: [],
+          replyTo: replyToMsg
+            ? { id: replyToMsg.id, content: replyToMsg.content, attachmentUrl: replyToMsg.attachmentUrl ?? null, attachmentName: replyToMsg.attachmentName ?? null, author: replyToMsg.author }
+            : null,
+          pending: true,
+        };
+        set((state) => ({ dmMessages: [...state.dmMessages, tempMessage] }));
+      }
     }
 
     const formData = new FormData();
@@ -728,12 +875,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       formData.append("attachment", attachment);
     }
 
-    const { data } = await api.post(`/dms/${dmChannelId}/messages`, formData, {
-      headers: { "Content-Type": "multipart/form-data" }
-    });
-    set((state) => ({
-      dmMessages: state.dmMessages.some((m) => m.id === data.message.id) ? state.dmMessages : [...state.dmMessages, data.message]
-    }));
+    try {
+      const { data } = await api.post(`/dms/${dmChannelId}/messages`, formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      if (tempId) {
+        set((state) => ({
+          dmMessages: state.dmMessages
+            .filter((m) => m.id !== tempId)
+            .concat(state.dmMessages.some((m) => m.id === data.message.id) ? [] : [data.message])
+        }));
+      } else {
+        set((state) => ({
+          dmMessages: state.dmMessages.some((m) => m.id === data.message.id) ? state.dmMessages : [...state.dmMessages, data.message]
+        }));
+      }
+    } catch (err) {
+      if (tempId) {
+        set((state) => ({ dmMessages: state.dmMessages.filter((m) => m.id !== tempId) }));
+      }
+      throw err;
+    }
   },
   editMessage: async (messageId, content) => {
     await api.patch(`/chat/messages/${messageId}`, { content });
@@ -858,6 +1020,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       getSocket()?.emit("dm:leave", dmId);
     }
   },
+  refreshOfflineUnreads: async () => {
+    const lastSeenChannels = loadLastSeenByChannel();
+    const lastSeenDMs = loadLastSeenByDM();
+    if (Object.keys(lastSeenChannels).length === 0 && Object.keys(lastSeenDMs).length === 0) return;
+    try {
+      const { data } = await api.post("/users/me/unread-counts", {
+        channels: lastSeenChannels,
+        dms: lastSeenDMs
+      });
+      set((state) => {
+        const nextUnread = { ...state.unreadByChannel };
+        for (const [channelId, count] of Object.entries(data.channels as Record<string, number>)) {
+          nextUnread[channelId] = Math.max(nextUnread[channelId] ?? 0, count);
+        }
+        const nextDMs = { ...state.unreadDMs };
+        for (const [dmId, count] of Object.entries(data.dms as Record<string, number>)) {
+          nextDMs[dmId] = Math.max(nextDMs[dmId] ?? 0, count);
+        }
+        persistUnreads(nextUnread, state.mentionUnreadByChannel);
+        persistUnreadDMs(nextDMs);
+        return { unreadByChannel: nextUnread, unreadDMs: nextDMs };
+      });
+    } catch {
+      // Non-fatal: badge counts may be stale but app still works
+    }
+  },
   bindSocketEvents: (currentUser) => {
     const socket = getSocket();
     if (!socket) {
@@ -942,6 +1130,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (activeDMId) {
         socket.emit("dm:join", activeDMId);
       }
+
+      // If servers are already loaded in state, this is a reconnect after a
+      // disconnect (not the initial page-load connect). On the initial connect
+      // loadServers() handles the first loadMessages call; calling it again here
+      // would advance lastSeenByChannel before the divider is rendered, erasing it.
+      const isReconnect = get().servers.length > 0;
+      if (isReconnect) {
+        const activeChannelId = get().activeChannelId;
+        if (activeChannelId) {
+          void get().loadMessages(activeChannelId);
+        } else if (activeDMId && get().mode === "DM") {
+          void get().loadDMMessages(activeDMId);
+        }
+        void get().refreshOfflineUnreads();
+      }
     });
 
     socket.on("disconnect", () => {
@@ -966,6 +1169,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set((state) => ({
           messages: state.messages.some((m) => m.id === message.id) ? state.messages : [...state.messages, message]
         }));
+        // Keep last-seen in sync so a refresh doesn't create a false "New Messages" divider
+        persistLastSeenByChannel({ ...loadLastSeenByChannel(), [message.channelId]: message.id });
       }
 
       if (shouldMarkUnread && !isSelfAuthored) {
@@ -1207,6 +1412,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set((state) => ({
             dmMessages: state.dmMessages.some((m) => m.id === message.id) ? state.dmMessages : [...state.dmMessages, message]
           }));
+          persistLastSeenByDM({ ...loadLastSeenByDM(), [message.dmChannelId]: message.id });
         }
         return;
       }
@@ -1215,6 +1421,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set((state) => ({
           dmMessages: state.dmMessages.some((m) => m.id === message.id) ? state.dmMessages : [...state.dmMessages, message]
         }));
+        persistLastSeenByDM({ ...loadLastSeenByDM(), [message.dmChannelId]: message.id });
       }
 
       if (shouldMarkUnread) {

@@ -2352,16 +2352,16 @@ const ChatArea = ({
               stableRefsMap.current[message.id] = (n: HTMLElement | null) => bindMessageNode(message.id, n);
             }
             const messageRef = stableRefsMap.current[message.id]!;
-            const isFirstUnread = focusMessageId === message.id && consumedFocusMessageIdRef.current !== focusMessageId;
+            const isFirstUnread = focusMessageId === message.id;
             return (
               <Fragment key={message.id}>
                 {isFirstUnread ? (
                   <div className="mx-2 my-1 flex items-center gap-2 select-none" aria-label="New messages">
-                    <div className="h-px flex-1 bg-red-500/50" />
-                    <span className="rounded-full bg-red-500/20 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-red-400">
+                    <div className="h-px flex-1 bg-[#f23f43]/60" />
+                    <span className="rounded-full bg-[#f23f43]/15 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[#f23f43]">
                       New Messages
                     </span>
-                    <div className="h-px flex-1 bg-red-500/50" />
+                    <div className="h-px flex-1 bg-[#f23f43]/60" />
                   </div>
                 ) : null}
               <article
@@ -2369,6 +2369,7 @@ const ChatArea = ({
                 key={message.id}
                 id={`message-${message.id}`}
                 onClick={() => {
+                  if (message.pending) return;
                   if (!backspaceHeldRef.current) return;
                   const canDelete = mine || (mode === "SERVER" && canModerateServerMessages);
                   if (!canDelete) return;
@@ -2379,6 +2380,7 @@ const ChatArea = ({
                   }
                 }}
                 onDoubleClick={() => {
+                  if (message.pending) return;
                   if (mine) {
                     setEditingId(message.id);
                     setEditingDraft(message.content);
@@ -2539,7 +2541,7 @@ const ChatArea = ({
                     </div>
                   ) : (
                     <>
-                      <div className="message-markdown break-words text-[15px] text-discord-text">
+                      <div className={`message-markdown break-words text-[15px] ${message.pending ? "text-discord-muted" : "text-discord-text"}`}>
                         {renderMessageContent(message.content)}
                         {message.editedAt ? <span className="ml-1 text-[10px] text-discord-muted">(edited)</span> : null}
                       </div>
