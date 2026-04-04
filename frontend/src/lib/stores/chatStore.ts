@@ -10,6 +10,7 @@ const VIEW_STORAGE_KEY = "windcord_view_v1";
 const HIDDEN_DMS_STORAGE_KEY = "windcord_hidden_dms_v1";
 const LAST_CHANNEL_BY_SERVER_STORAGE_KEY = "windcord_last_channel_by_server_v1";
 const NOTIF_SOUND_STORAGE_KEY = "windcord_notif_sound_v1";
+const UNREAD_DMS_STORAGE_KEY = "windcord_unread_dms_v1";
 const NOTIFICATION_SOUND_DEFAULT_URL = `${import.meta.env.BASE_URL}notif.mp3`;
 const NOTIFICATION_SOUND_ALT_URL = `${import.meta.env.BASE_URL}notifalt.mp3`;
 
@@ -63,6 +64,28 @@ const loadPersistedUnreads = (): PersistedUnreadState => {
   } catch {
     return { unreadByChannel: {}, mentionUnreadByChannel: {} };
   }
+};
+
+const loadPersistedUnreadDMs = (): Record<string, number> => {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(UNREAD_DMS_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw) as Record<string, number>;
+  } catch {
+    return {};
+  }
+};
+
+const persistUnreadDMs = (unreadDMs: Record<string, number>): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(UNREAD_DMS_STORAGE_KEY, JSON.stringify(unreadDMs));
 };
 
 const persistUnreads = (unreadByChannel: Record<string, number>, mentionUnreadByChannel: Record<string, number>): void => {
@@ -247,6 +270,7 @@ const markSocketEventProcessed = (scope: "channel" | "dm", messageId: string): b
 const persistedUnreads = loadPersistedUnreads();
 const persistedView = loadPersistedView();
 const persistedHiddenDMs = loadHiddenDMs();
+const persistedUnreadDMs = loadPersistedUnreadDMs();
 const persistedLastChannelByServer = loadLastChannelByServer();
 
 type ChatState = {
@@ -333,7 +357,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   typingByChannel: {},
   unreadByChannel: persistedUnreads.unreadByChannel,
   mentionUnreadByChannel: persistedUnreads.mentionUnreadByChannel,
-  unreadDMs: {},
+  unreadDMs: persistedUnreadDMs,
   hiddenDMIds: persistedHiddenDMs,
   lastChannelByServer: persistedLastChannelByServer,
   lastUnreadMessageIdByChannel: {},
@@ -516,6 +540,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const socket = getSocket();
     const activeDMId = get().activeDMId;
 
+    persistUnreadDMs({});
     set({ mode: "DM", activeChannelId: null, messages: [], channelOpenFocusMessageId: null, dmChannelOpenFocusMessageId: null, unreadDMs: {} });
     persistView(get().activeServerId, null, "DM", activeDMId);
 
@@ -742,9 +767,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return data.server?.inviteCode ?? null;
   },
   markDMRead: (dmId) => {
-    set((state) => ({
-      unreadDMs: { ...state.unreadDMs, [dmId]: 0 }
-    }));
+    set((state) => {
+      const next = { ...state.unreadDMs, [dmId]: 0 };
+      persistUnreadDMs(next);
+      return { unreadDMs: next };
+    });
   },
   hideDM: (dmId) => {
     const activeDMId = get().activeDMId;
@@ -1121,12 +1148,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (shouldMarkUnread) {
         playUnreadNotification();
-        set((state) => ({
-          unreadDMs: {
+        set((state) => {
+          const next = {
             ...state.unreadDMs,
             [message.dmChannelId]: (state.unreadDMs[message.dmChannelId] ?? 0) + 1
-          }
-        }));
+          };
+          persistUnreadDMs(next);
+          return { unreadDMs: next };
+        });
       }
     });
 
