@@ -194,21 +194,21 @@ const MainPage = (): JSX.Element => {
     }
   }, [apiUnreachable, navigate, user]);
 
-  // Dynamic tab title: "(N) #channel | Server" or "(N) @user | DiskChat"
+  // Dynamic tab title: "(N) #channel | Server" or "(N) @user | Windcord"
   useEffect(() => {
     const mentionUnread = Object.values(mentionUnreadByChannel).reduce((a, b) => a + b, 0);
     const dmUnread = Object.values(unreadDMs).reduce((a, b) => a + b, 0);
     const totalUnread = mentionUnread + dmUnread;
     const prefix = totalUnread > 0 ? `(${totalUnread}) ` : "";
 
-    let context = "DiskChat";
+    let context = "Windcord";
     if (mode === "SERVER" && activeChannel) {
-      context = `#${activeChannel.name} | ${activeServer?.name ?? "DiskChat"}`;
+      context = `#${activeChannel.name} | ${activeServer?.name ?? "Windcord"}`;
     } else if (mode === "DM" && activeDMUser) {
       const dmName = activeDMUser.nickname?.trim() || activeDMUser.username;
-      context = `@${dmName} | DiskChat`;
+      context = `@${dmName} | Windcord`;
     } else if (mode === "DM") {
-      context = "Home | DiskChat";
+      context = "Home | Windcord";
     }
 
     document.title = `${prefix}${context}`;

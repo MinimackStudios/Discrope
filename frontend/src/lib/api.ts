@@ -2,7 +2,7 @@ import axios from "axios";
 import { useSystemStore } from "./stores/systemStore";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
-const API_OUTAGE_SIMULATION_KEY = "diskchat_simulate_api_down";
+const API_OUTAGE_SIMULATION_KEY = "windcord_simulate_api_down";
 
 const isApiOutageSimulated = (): boolean => {
   if (import.meta.env.VITE_FORCE_API_DOWN === "true") {
@@ -25,7 +25,7 @@ api.interceptors.request.use((config) => {
     return Promise.reject(new Error("Simulated API outage"));
   }
 
-  const token = localStorage.getItem("diskchat_token");
+  const token = localStorage.getItem("windcord_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

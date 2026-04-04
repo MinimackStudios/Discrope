@@ -3,7 +3,7 @@ import { api } from "../api";
 import { connectSocket, disconnectSocket } from "../socket";
 import type { User } from "../../types";
 
-const USER_STORAGE_KEY = "diskchat_user";
+const USER_STORAGE_KEY = "windcord_user";
 
 const loadStoredUser = (): User | null => {
   try {
@@ -44,7 +44,7 @@ const getAuthErrorMessage = (error: unknown, fallbackMessage: string): string =>
     responseText.includes("proxy error") ||
     responseText.includes("connection refused");
   if (noResponse || proxyConnectionFailed) {
-    return "DiskChat could not reach the API server. It may be temporarily down. Please try again in a moment.";
+    return "Windcord could not reach the API server. It may be temporarily down. Please try again in a moment.";
   }
 
   return fallbackMessage;
@@ -77,14 +77,14 @@ type AuthState = {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: loadStoredUser(),
-  token: localStorage.getItem("diskchat_token"),
+  token: localStorage.getItem("windcord_token"),
   loading: true,
   setUser: (user) => {
     persistStoredUser(user);
     set({ user });
   },
   completeAuthSession: (user, token) => {
-    localStorage.setItem("diskchat_token", token);
+    localStorage.setItem("windcord_token", token);
     persistStoredUser(user);
     connectSocket(token);
     set({ user, token, loading: false });
@@ -92,7 +92,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (username, password) => {
     try {
       const { data } = await api.post("/auth/login", { username, password });
-      localStorage.setItem("diskchat_token", data.token);
+      localStorage.setItem("windcord_token", data.token);
       persistStoredUser(data.user);
       connectSocket(data.token);
       set({ user: data.user, token: data.token, loading: false });
@@ -129,7 +129,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
   restoreSession: async () => {
-    const token = localStorage.getItem("diskchat_token");
+    const token = localStorage.getItem("windcord_token");
     const cachedUser = loadStoredUser();
     if (!token) {
       persistStoredUser(null);
@@ -149,7 +149,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user: data.user, token, loading: false });
     } catch (error: unknown) {
       if (isAuthFailure(error)) {
-        localStorage.removeItem("diskchat_token");
+        localStorage.removeItem("windcord_token");
         persistStoredUser(null);
         disconnectSocket();
         set({ user: null, token: null, loading: false });
@@ -167,7 +167,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   logout: async () => {
     await api.post("/auth/logout");
-    localStorage.removeItem("diskchat_token");
+    localStorage.removeItem("windcord_token");
     persistStoredUser(null);
     disconnectSocket();
     set({ user: null, token: null, loading: false });

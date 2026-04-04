@@ -7,7 +7,7 @@ import type { User } from "../types";
 const downloadRecoveryKey = (username: string, recoveryKey: string): void => {
   const sanitizedUsername = username.trim().toLowerCase() || "account";
   const fileContents = [
-    "DiskChat Recovery Key",
+    "Windcord Recovery Key",
     "",
     `Username: ${sanitizedUsername}`,
     `Recovery Key: ${recoveryKey}`,
@@ -20,7 +20,7 @@ const downloadRecoveryKey = (username: string, recoveryKey: string): void => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `diskchat-recovery-key-${sanitizedUsername}.txt`;
+  link.download = `windcord-recovery-key-${sanitizedUsername}.txt`;
   link.click();
   URL.revokeObjectURL(url);
 };
@@ -99,11 +99,11 @@ const LoginPage = (): JSX.Element => {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md rounded-xl bg-[#313338] p-8 shadow-2xl"
       >
-        <h1 className="mb-2 text-center text-2xl font-bold text-white">Welcome to DiskChat</h1>
+        <h1 className="mb-2 text-center text-2xl font-bold text-white">Welcome to Windcord</h1>
         <p className="mb-6 text-center text-sm text-discord-muted">
           {isRecoveryHandoff
             ? recoveryStep === "register"
-              ? "Step 2 of 2: save your recovery key before entering DiskChat"
+              ? "Step 2 of 2: save your recovery key before entering Windcord"
               : "Save your replacement recovery key before returning to login"
             : mode === "login"
             ? "We are so excited to see you again!"
@@ -116,13 +116,13 @@ const LoginPage = (): JSX.Element => {
           <div className="rounded-lg border border-[#f0b232]/40 bg-[#2d2613] p-4 text-sm text-[#f8e7b2]">
             <p className="font-semibold text-white">Save this recovery key now.</p>
             <p className="mt-1 text-xs leading-5 text-[#e9d79a]">
-              DiskChat only shows this key once. You will need it if you ever forget your password.
+              Windcord only shows this key once. You will need it if you ever forget your password.
             </p>
             <div className="mt-3 rounded bg-[#111214] px-3 py-2 font-mono text-base tracking-[0.2em] text-white">
               {activeRecoveryCode}
             </div>
             <p className="mt-3 text-xs leading-5 text-[#f8e7b2]">
-              Download or copy this key before continuing. DiskChat does not keep a readable copy for you.
+              Download or copy this key before continuing. Windcord does not keep a readable copy for you.
             </p>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -167,7 +167,7 @@ const LoginPage = (): JSX.Element => {
                   }
                 }}
               >
-                {recoveryStep === "register" ? "Enter DiskChat" : "Back to Login"}
+                {recoveryStep === "register" ? "Enter Windcord" : "Back to Login"}
               </button>
             </div>
           </div>

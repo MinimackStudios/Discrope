@@ -56,7 +56,7 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
   const displayName = profileUser.nickname?.trim() || profileUser.username;
   const isSelf = me?.id === profileUser.id;
   const isDeletedUser = Boolean(profileUser.isDeleted);
-  const isSystemUser = profileUser.username === "DiskChat";
+  const isSystemUser = profileUser.username === "Windcord";
   const isFriend = friends.some((f) => f.id === profileUser.id);
   const isPendingOutgoing = outgoingPendingFriends.some((f) => f.id === profileUser.id);
   const diskchatMemberSince = formatJoinDate(profileUser.createdAt);
@@ -117,7 +117,7 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
                 <div className="mt-4 border-t border-white/10 pt-4">
                   {diskchatMemberSince ? (
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">DiskChat Member Since</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Windcord Member Since</p>
                       <p className="mt-1 text-sm text-discord-text">{diskchatMemberSince}</p>
                     </div>
                   ) : null}

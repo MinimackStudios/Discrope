@@ -183,7 +183,7 @@ const fetchEmbedPreview = async (targetUrl: string): Promise<EmbedPreview | null
   const response = await fetch(parsedUrl, {
     headers: {
       accept: "text/html,application/xhtml+xml",
-      "user-agent": "DiskChatBot/1.0 (+https://diskchat.local/embed-preview)"
+      "user-agent": "WindcordBot/1.0 (+https://windcord.github.io)"
     },
     redirect: "follow",
     signal: AbortSignal.timeout(8000)

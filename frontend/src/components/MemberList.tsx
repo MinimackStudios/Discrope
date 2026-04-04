@@ -4,7 +4,7 @@ import type { ServerMember, User } from "../types";
 import { formatStatusLabel } from "../lib/formatStatus";
 import StatusDot from "./StatusDot";
 
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 type Props = {
   members: ServerMember[];
   onSelectUser: (user: User) => void;

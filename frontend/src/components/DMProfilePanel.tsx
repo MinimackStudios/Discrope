@@ -53,7 +53,7 @@ const DMProfilePanel = ({ user }: Props): JSX.Element => {
                   <div className="mt-4 border-t border-white/10 pt-4 space-y-3">
                     {memberSince ? (
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">DiskChat Member Since</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Windcord Member Since</p>
                         <p className="mt-1 text-sm text-discord-text">{memberSince}</p>
                       </div>
                     ) : null}

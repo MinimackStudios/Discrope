@@ -5,11 +5,11 @@ import { useAuthStore } from "./authStore";
 import type { Channel, ChannelCategory, DMChannel, DMMessage, Message, Server, User } from "../../types";
 
 const typingTimeouts = new Map<string, number>();
-const UNREAD_STORAGE_KEY = "diskchat_unreads_v1";
-const VIEW_STORAGE_KEY = "diskchat_view_v1";
-const HIDDEN_DMS_STORAGE_KEY = "diskchat_hidden_dms_v1";
-const LAST_CHANNEL_BY_SERVER_STORAGE_KEY = "diskchat_last_channel_by_server_v1";
-const NOTIF_SOUND_STORAGE_KEY = "diskchat_notif_sound_v1";
+const UNREAD_STORAGE_KEY = "windcord_unreads_v1";
+const VIEW_STORAGE_KEY = "windcord_view_v1";
+const HIDDEN_DMS_STORAGE_KEY = "windcord_hidden_dms_v1";
+const LAST_CHANNEL_BY_SERVER_STORAGE_KEY = "windcord_last_channel_by_server_v1";
+const NOTIF_SOUND_STORAGE_KEY = "windcord_notif_sound_v1";
 const NOTIFICATION_SOUND_DEFAULT_URL = `${import.meta.env.BASE_URL}notif.mp3`;
 const NOTIFICATION_SOUND_ALT_URL = `${import.meta.env.BASE_URL}notifalt.mp3`;
 

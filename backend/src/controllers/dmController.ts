@@ -4,7 +4,7 @@ import path from "node:path";
 import { prisma } from "../lib/prisma";
 
 const prismaAny = prisma as any;
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 
 const dmMessageDetailsInclude = {
   author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },

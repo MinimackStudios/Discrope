@@ -84,8 +84,9 @@ const CreateServerModal = ({ open, onClose, onCreated }: Props): JSX.Element | n
                 placeholder="Custom Invite Code (optional)"
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value.toLowerCase().replace(/\s+/g, ""))}
-                pattern="[a-z0-9-]{3,32}"
-                title="Use 3-32 lowercase letters, numbers, or hyphens."
+                pattern="[a-z0-9-]{3,12}"
+                title="Use 3-12 lowercase letters, numbers, or hyphens."
+                maxLength={12}
               />
               <input className="mt-2 w-full text-sm" type="file" accept="image/*" onChange={(e) => onIconPicked(e.target.files?.[0] ?? null)} />
               {icon ? <p className="mt-1 text-[11px] text-discord-muted">Edited icon ready.</p> : null}

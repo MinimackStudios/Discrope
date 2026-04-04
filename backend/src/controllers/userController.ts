@@ -7,7 +7,7 @@ import { logAdminEvent } from "../lib/adminAudit";
 const prismaAny = prisma as any;
 const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const DELETED_USERNAME = "deleteduser";
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 
 const toLocalUploadPath = (url?: string | null): string | null => {
   if (!url || !url.startsWith("/uploads/")) {

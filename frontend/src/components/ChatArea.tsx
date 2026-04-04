@@ -1,5 +1,6 @@
 import { Children, cloneElement, type ChangeEvent, Fragment, isValidElement, type MouseEvent, type ReactNode, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import ReactMarkdown from "react-markdown";
 import emojiMartDataJson from "@emoji-mart/data/sets/15/native.json";
 import { motion, AnimatePresence } from "framer-motion";
@@ -83,11 +84,11 @@ const getFirstAttachableFile = (dataTransfer: DataTransfer | null | undefined): 
   return dataTransfer?.files?.[0] ?? null;
 };
 
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
 const INVITE_REGEX = /(?:https?:\/\/[^\s]+\/invite\/|\/invite\/)([a-z0-9-]{3,32})/i;
 const URL_REGEX = /https?:\/\/[^\s<>()]+[^\s<>().,!?:;\]\)]/gi;
-const DRAFT_STORAGE_KEY = "diskchat_message_drafts_v1";
+const DRAFT_STORAGE_KEY = "windcord_message_drafts_v1";
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const MARKDOWN_SYNTAX_REGEX = /[`*_~\[\]()>#]|(?:^|\s)-\s|https?:\/\//;
 const VIRTUALIZATION_THRESHOLD = 0;
@@ -457,6 +458,27 @@ const renderEmojiChildren = (children: ReactNode, keyPrefix: string, sizeClassNa
 const EmojiGlyph = ({ emoji, sizeClassName = "h-[1.3em] w-[1.3em]" }: { emoji: string; sizeClassName?: string }): JSX.Element => {
   return <EmojiInlineImage emoji={emoji} sizeClassName={sizeClassName} />;
 };
+
+const renderComposerText = (text: string, keyPrefix: string, sizeClassName = "h-[1.25em] w-[1.25em]"): ReactNode[] => {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  const regex = new RegExp(URL_REGEX.source, "gi");
+  for (const match of text.matchAll(regex)) {
+    const url = match[0];
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      parts.push(...renderEmojiText(text.slice(lastIndex, index), `${keyPrefix}-pre-${index}`, sizeClassName));
+    }
+    parts.push(<span key={`${keyPrefix}-url-${index}`} className="text-[#00b0f4]">{url}</span>);
+    lastIndex = index + url.length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(...renderEmojiText(text.slice(lastIndex), `${keyPrefix}-tail`, sizeClassName));
+  }
+  return parts.length ? parts : renderEmojiText(text, keyPrefix, sizeClassName);
+};
+
+
 
 const emojiOnlySizeClass = (count: number): string => {
   if (count <= 3) {
@@ -1328,16 +1350,24 @@ const ChatArea = ({
       return <span className="whitespace-pre-wrap">{renderEmojiText(rawContent, "plain-message")}</span>;
     }
 
+    // Preserve multiple consecutive blank lines by filling each extra blank line
+    // with a non-breaking space paragraph — Markdown collapses runs of 3+ newlines
+    // into a single paragraph break otherwise.
+    const processedContent = rawContent.replace(/\n{3,}/g, (match) => {
+      const extraBlanks = match.length - 2;
+      return "\n\n" + "\u00A0\n\n".repeat(extraBlanks);
+    });
+
     return (
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noreferrer" className="text-[#00a8fc] hover:underline">
               {renderEmojiChildren(children, "markdown-link")}
             </a>
           ),
-          p: ({ children }) => <>{renderEmojiChildren(children, "markdown-paragraph")}</>,
+          p: ({ children }) => <span className="block">{renderEmojiChildren(children, "markdown-paragraph")}</span>,
           strong: ({ children }) => <strong>{renderEmojiChildren(children, "markdown-strong")}</strong>,
           em: ({ children }) => <em>{renderEmojiChildren(children, "markdown-em")}</em>,
           del: ({ children }) => <del>{renderEmojiChildren(children, "markdown-del")}</del>,
@@ -1345,7 +1375,7 @@ const ChatArea = ({
           blockquote: ({ children }) => <blockquote>{renderEmojiChildren(children, "markdown-blockquote")}</blockquote>
         }}
       >
-        {rawContent}
+        {processedContent}
       </ReactMarkdown>
     );
   };
@@ -2238,6 +2268,7 @@ const ChatArea = ({
       </header>
 
       <div ref={scrollRef} className="discord-scrollbar flex-1 overflow-y-auto px-3 py-4">
+          <div className="flex min-h-full flex-col justify-end">
           {hasOlderMessages ? (
             <div className="mb-2 flex justify-center">
               {loadingOlderMessages ? (
@@ -2521,13 +2552,15 @@ const ChatArea = ({
                   <div className={`pointer-events-none absolute right-2 top-1 z-10 flex h-fit items-center gap-0.5 rounded bg-[#111214] p-0.5 shadow-md transition-opacity ${overlayMenuOpen ? "opacity-0" : "opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"}`}>
                     {mode === "SERVER" ? (
                       <>
-                        <button
-                          className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
-                          title="Reply"
-                          onClick={() => setReplyTo(message)}
-                        >
-                          <Reply size={14} />
-                        </button>
+                        {!(channelReadOnly && !canModerateServerMessages) ? (
+                          <button
+                            className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
+                            title="Reply"
+                            onClick={() => setReplyTo(message)}
+                          >
+                            <Reply size={14} />
+                          </button>
+                        ) : null}
                         <button
                           className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
                           title="React"
@@ -2612,6 +2645,7 @@ const ChatArea = ({
             );
           })}
           {visibleRange.bottomPadding > 0 ? <div style={{ height: visibleRange.bottomPadding }} /> : null}
+          </div>
       </div>
 
       <form onSubmit={onSubmit} className="relative p-3 pt-1.5">
@@ -2715,16 +2749,16 @@ const ChatArea = ({
                     {composerSel !== null
                       ? composerSel.start === composerSel.end
                         ? <>
-                            {renderEmojiText(content.slice(0, composerSel.start), "composer-input-l", "h-[1.25em] w-[1.25em]")}
+                            {renderComposerText(content.slice(0, composerSel.start), "composer-input-l", "h-[1.25em] w-[1.25em]")}
                             <span className="composer-fake-caret" />
-                            {renderEmojiText(content.slice(composerSel.start), "composer-input-r", "h-[1.25em] w-[1.25em]")}
+                            {renderComposerText(content.slice(composerSel.start), "composer-input-r", "h-[1.25em] w-[1.25em]")}
                           </>
                         : <>
-                            {renderEmojiText(content.slice(0, composerSel.start), "composer-input-l", "h-[1.25em] w-[1.25em]")}
-                            <span className="rounded-[2px] bg-[#5865f2]/40">{renderEmojiText(content.slice(composerSel.start, composerSel.end), "composer-input-m", "h-[1.25em] w-[1.25em]")}</span>
-                            {renderEmojiText(content.slice(composerSel.end), "composer-input-r", "h-[1.25em] w-[1.25em]")}
+                            {renderComposerText(content.slice(0, composerSel.start), "composer-input-l", "h-[1.25em] w-[1.25em]")}
+                            <span className="rounded-[2px] bg-[#5865f2]/40">{renderComposerText(content.slice(composerSel.start, composerSel.end), "composer-input-m", "h-[1.25em] w-[1.25em]")}</span>
+                            {renderComposerText(content.slice(composerSel.end), "composer-input-r", "h-[1.25em] w-[1.25em]")}
                           </>
-                      : renderEmojiText(content, "composer-input", "h-[1.25em] w-[1.25em]")}
+                      : renderComposerText(content, "composer-input", "h-[1.25em] w-[1.25em]")}
                   </div>
                 </div>
               ) : null}

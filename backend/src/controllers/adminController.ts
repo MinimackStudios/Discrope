@@ -8,7 +8,7 @@ import { adminEventsBus } from "../lib/adminEvents";
 
 const prismaAny = prisma as any;
 const DELETED_USERNAME = "deleteduser";
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 
 const toLocalUploadPath = (url?: string | null): string | null => {
   if (!url || !url.startsWith("/uploads/")) {
@@ -188,7 +188,7 @@ export const deleteUserAccountAsAdmin = async (req: Request, res: Response): Pro
   }
 
   if (user.username === SYSTEM_USERNAME) {
-    res.status(400).json({ message: "The DiskChat system user cannot be deleted" });
+    res.status(400).json({ message: "The Windcord system user cannot be deleted" });
     return;
   }
 

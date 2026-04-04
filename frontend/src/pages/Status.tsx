@@ -56,7 +56,7 @@ const StatusPage = (): JSX.Element => {
       navigate("/", { replace: true });
     } catch {
       setApiUnreachable(true);
-      setLastError("DiskChat still cannot reach the API server.");
+      setLastError("Windcord still cannot reach the API server.");
     } finally {
       setChecking(false);
     }
@@ -71,7 +71,7 @@ const StatusPage = (): JSX.Element => {
       >
         <h1 className="text-2xl font-bold text-white">API Connection Lost</h1>
         <p className="mt-2 text-sm text-discord-muted">
-          DiskChat could not reach the backend service. Your session is still saved locally and will resume once the API comes back.
+          Windcord could not reach the backend service. Your session is still saved locally and will resume once the API comes back.
         </p>
         <p className="mt-3 text-xs text-[#9ecbff]">We retry automatically every 5 seconds.</p>
         {lastError ? <p className="mt-3 text-xs text-red-300">{lastError}</p> : null}

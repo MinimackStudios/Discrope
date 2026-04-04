@@ -8,7 +8,7 @@ import { logAdminEvent } from "../lib/adminAudit";
 const prismaAny = prisma as any;
 
 const makeInviteCode = (): string => uuid().replace(/-/g, "").slice(0, 8);
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 const SYSTEM_AVATAR_URL = "/disc.png";
 
 const getOrCreateSystemUserId = async (): Promise<string> => {

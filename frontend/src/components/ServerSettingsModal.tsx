@@ -7,7 +7,7 @@ import type { Server, ServerMember } from "../types";
 import AvatarCropModal from "./AvatarCropModal";
 import StatusDot from "./StatusDot";
 
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 type BannedUser = {
   userId: string;
   user: { id: string; username: string; nickname?: string; avatarUrl?: string | null; isDeleted?: boolean; status?: "ONLINE" | "IDLE" | "DND" | "INVISIBLE" | "OFFLINE" };
@@ -161,8 +161,9 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value.toLowerCase().replace(/\s+/g, ""))}
                   placeholder="my-server"
-                  pattern="[a-z0-9-]{3,32}"
-                  title="Use 3-32 lowercase letters, numbers, or hyphens."
+                  pattern="[a-z0-9-]{3,12}"
+                  title="Use 3-12 lowercase letters, numbers, or hyphens."
+                  maxLength={12}
                 />
               </label>
 
@@ -173,7 +174,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
                   onClick={async () => {
                     const code = await onRegenerateInvite(inviteCode);
                     if (code) {
-                      const link = `${window.location.origin}/DiskChat/invite/${code}`;
+                      const link = `${window.location.origin}/Windcord/invite/${code}`;
                       await navigator.clipboard.writeText(link);
                     }
                   }}
