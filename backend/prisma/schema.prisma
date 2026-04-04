@@ -17,6 +17,9 @@ model User {
   avatarUrl         String?
   aboutMe           String           @default("")
   customStatus      String           @default("")
+  bannerColor       String?
+  bannerImageUrl    String?
+  accentColor       String?
   status            String           @default("ONLINE")
   createdAt         DateTime         @default(now())
   ownedServers      Server[]
@@ -24,6 +27,7 @@ model User {
   messages          Message[]
   dmMessages        DMMessage[]
   reactions         MessageReaction[]
+  dmReactions       DMMessageReaction[]
   outgoingRequests  FriendRequest[]  @relation("OutgoingRequests")
   incomingRequests  FriendRequest[]  @relation("IncomingRequests")
   dmChannels        DMChannel[]      @relation("DMParticipants")
@@ -70,6 +74,7 @@ model ServerMember {
   userId    String
   serverId  String
   nickname  String?
+  nickColor String?
   role      String     @default("MEMBER")
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   server    Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
@@ -91,6 +96,8 @@ model Channel {
   id          String       @id @default(cuid())
   name        String
   type        String
+  readOnly    Boolean      @default(false)
+  order       Int          @default(0)
   categoryId  String?
   serverId    String
   category    ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -131,16 +138,29 @@ model DMMessage {
   dmChannel      DMChannel @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
   replyTo        DMMessage? @relation("DMMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies        DMMessage[] @relation("DMMessageReplies")
+  reactions      DMMessageReaction[]
 }
 
 model MessageReaction {
   messageId  String
   userId     String
   emoji      String
+  createdAt  DateTime @default(now())
   message    Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
   user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([messageId, userId, emoji])
+}
+
+model DMMessageReaction {
+  dmMessageId String
+  userId      String
+  emoji       String
+  createdAt   DateTime  @default(now())
+  dmMessage   DMMessage @relation(fields: [dmMessageId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([dmMessageId, userId, emoji])
 }
 
 model FriendRequest {

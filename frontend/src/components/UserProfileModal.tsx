@@ -2,11 +2,9 @@ import { useEffect, useState } from "react";
 import type { User } from "../types";
 import { AnimatePresence, motion } from "framer-motion";
 import { formatStatusLabel } from "../lib/formatStatus";
-import { resolveMediaUrl } from "../lib/media";
+import { resolveMediaUrl, resolveUserAvatarUrl } from "../lib/media";
 import { useBackdropClose } from "../lib/useBackdropClose";
 import StatusDot from "./StatusDot";
-
-const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
 
 type Props = {
   user: User | null;
@@ -58,13 +56,15 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
   const displayName = profileUser.nickname?.trim() || profileUser.username;
   const isSelf = me?.id === profileUser.id;
   const isDeletedUser = Boolean(profileUser.isDeleted);
-  const isSystemUser = profileUser.username === "Discrope";
+  const isSystemUser = profileUser.username === "DiskChat";
   const isFriend = friends.some((f) => f.id === profileUser.id);
   const isPendingOutgoing = outgoingPendingFriends.some((f) => f.id === profileUser.id);
-  const discropeMemberSince = formatJoinDate(profileUser.createdAt);
+  const diskchatMemberSince = formatJoinDate(profileUser.createdAt);
   const serverJoinDate = formatJoinDate(serverMemberSince);
+  const friendsSince = formatJoinDate(isFriend ? profileUser.friendsSince : null);
   const trimmedServerName = serverName?.trim();
   const serverMembershipLabel = trimmedServerName ? `Member of ${trimmedServerName} Since` : "Member Since";
+  const accentBg = profileUser.accentColor || undefined;
 
   return (
     <AnimatePresence onExitComplete={() => setDisplayedUser(user ?? null)}>
@@ -86,13 +86,17 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
             className="w-full max-w-sm overflow-hidden rounded-xl bg-[#2b2d31]"
             onClick={(e) => e.stopPropagation()}
           >
-        <div className="h-24 bg-gradient-to-r from-[#5865f2] to-[#3d4ddc]" />
-        <div className="relative p-4">
+        {profileUser.bannerImageUrl
+          ? <img src={resolveMediaUrl(profileUser.bannerImageUrl) ?? ""} alt="" className="h-24 w-full object-cover" />
+          : <div className="h-24" style={{ background: profileUser.bannerColor ?? "linear-gradient(to right, #5865f2, #3d4ddc)" }} />
+        }
+        <div className="relative p-4" style={accentBg ? { backgroundColor: accentBg } : undefined}>
           <div className="absolute -top-10 h-20 w-20">
             <img
-              src={resolveMediaUrl(profileUser.avatarUrl) || DEFAULT_AVATAR_URL}
+              src={resolveUserAvatarUrl(profileUser)}
               alt={displayName}
-              className="h-20 w-20 rounded-full border-4 border-[#2b2d31]"
+              className="h-20 w-20 rounded-full border-4"
+              style={{ borderColor: accentBg ?? "#2b2d31" }}
             />
             <span className="absolute bottom-1 right-1">
               <StatusDot status={profileUser.status} sizeClassName="h-4 w-4" cutoutClassName="ring-4 ring-[#2b2d31]" />
@@ -105,22 +109,28 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
             <p className="text-xs text-discord-muted">@{profileUser.username}</p>
             <p className="text-xs text-discord-muted">{profileUser.customStatus?.trim() || formatStatusLabel(profileUser.status)}</p>
 
-            <div className="mt-4 rounded-md bg-[#1e1f22] p-3">
+            <div className={`mt-4 rounded-md p-3 ${accentBg ? "bg-black/20" : "bg-[#1e1f22]"}`}>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">About Me</p>
               <p className="mt-1 whitespace-pre-wrap text-sm text-discord-text">{profileUser.aboutMe || "No bio set."}</p>
 
-              {discropeMemberSince || serverJoinDate ? (
+              {diskchatMemberSince || serverJoinDate || friendsSince ? (
                 <div className="mt-4 border-t border-white/10 pt-4">
-                  {discropeMemberSince ? (
+                  {diskchatMemberSince ? (
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Discrope Member Since</p>
-                      <p className="mt-1 text-sm text-discord-text">{discropeMemberSince}</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">DiskChat Member Since</p>
+                      <p className="mt-1 text-sm text-discord-text">{diskchatMemberSince}</p>
                     </div>
                   ) : null}
                   {serverJoinDate ? (
-                    <div className={discropeMemberSince ? "mt-3" : undefined}>
+                    <div className={diskchatMemberSince ? "mt-3" : undefined}>
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">{serverMembershipLabel}</p>
                       <p className="mt-1 text-sm text-discord-text">{serverJoinDate}</p>
+                    </div>
+                  ) : null}
+                  {friendsSince ? (
+                    <div className={diskchatMemberSince || serverJoinDate ? "mt-3" : undefined}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Friends Since</p>
+                      <p className="mt-1 text-sm text-discord-text">{friendsSince}</p>
                     </div>
                   ) : null}
                 </div>

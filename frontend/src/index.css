@@ -76,10 +76,42 @@ html {
 }
 
 .discord-inline-emoji {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin: 0 0.04em;
-  vertical-align: -0.22em;
+  vertical-align: -0.33em;
+  flex-shrink: 0;
+  color: transparent;
+  user-select: none;
+}
+
+.discord-inline-emoji > img {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+  display: block;
+}
+
+/* Prevent the underlying Unicode emoji characters in composer/edit textareas
+   from showing through during selection highlights */
+.emoji-hidden-text::selection,
+.emoji-hidden-text *::selection {
+  color: transparent;
+}
+
+.composer-fake-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1.15em;
+  background: white;
+  vertical-align: text-bottom;
+  animation: composer-caret-blink 1.05s step-start infinite;
+}
+
+@keyframes composer-caret-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
 }
 
 .discord-jumbo-emoji-row {
@@ -183,4 +215,17 @@ html {
 .discord-emoji-picker--composer.EmojiPickerReact {
   width: 372px !important;
   height: 456px !important;
+}
+
+.video-attachment-media {
+  object-fit: contain;
+  background: #2b2d31;
+}
+
+.video-attachment-media:fullscreen,
+.video-attachment-media:-webkit-full-screen,
+.video-attachment-media:-moz-full-screen,
+.video-attachment-media:-ms-fullscreen {
+  object-fit: contain !important;
+  background: #2b2d31;
 }

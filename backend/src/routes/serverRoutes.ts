@@ -13,6 +13,7 @@ import {
   listServers,
   regenerateInvite,
   unbanMember,
+  updateMyMembership,
   updateServer
 } from "../controllers/serverController";
 import { authMiddleware } from "../middleware/auth";
@@ -33,6 +34,7 @@ router.post("/:serverId/members/:memberId/kick", kickMember);
 router.post("/:serverId/members/:memberId/ban", banMember);
 router.get("/:serverId/bans", getBans);
 router.delete("/:serverId/bans/:memberId", unbanMember);
+router.patch("/:serverId/members/me", updateMyMembership);
 router.delete("/:serverId", deleteServer);
 router.post("/", uploadServerIcon.single("icon"), body("name").isLength({ min: 2, max: 64 }), validateRequest, createServer);
 router.patch("/:serverId", uploadServerIcon.single("icon"), updateServer);

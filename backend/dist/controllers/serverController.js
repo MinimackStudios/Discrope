@@ -11,7 +11,7 @@ const prisma_1 = require("../lib/prisma");
 const adminAudit_1 = require("../lib/adminAudit");
 const prismaAny = prisma_1.prisma;
 const makeInviteCode = () => (0, uuid_1.v4)().replace(/-/g, "").slice(0, 8);
-const SYSTEM_USERNAME = "Discrope";
+const SYSTEM_USERNAME = "DiskChat";
 const SYSTEM_AVATAR_URL = "/disc.png";
 const getOrCreateSystemUserId = async () => {
     const existing = await prismaAny.user.findUnique({
@@ -343,7 +343,7 @@ exports.regenerateInvite = regenerateInvite;
 const deleteServer = async (req, res) => {
     const userId = req.user.id;
     const { serverId } = req.params;
-    const existing = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true, iconUrl: true } });
+    const existing = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true, iconUrl: true, name: true } });
     if (!existing || existing.ownerId !== userId) {
         res.status(403).json({ message: "Only server owner can delete server" });
         return;
@@ -353,7 +353,7 @@ const deleteServer = async (req, res) => {
     io.emit("server:deleted", { serverId });
     await (0, adminAudit_1.logAdminEvent)({
         type: "SERVER_DELETED",
-        summary: `Server deleted: ${serverId}`,
+        summary: `Server deleted: ${existing.name || serverId}`,
         actorUserId: userId,
         actorUsername: req.user.username,
         targetServerId: serverId

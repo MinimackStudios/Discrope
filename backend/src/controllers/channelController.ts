@@ -60,6 +60,7 @@ const canModerateChannel = async (channelId: string, userId: string): Promise<bo
 const messageDetailsInclude = {
   author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
   reactions: {
+    orderBy: { createdAt: "asc" },
     include: {
       user: {
         select: {
@@ -75,6 +76,8 @@ const messageDetailsInclude = {
     select: {
       id: true,
       content: true,
+      attachmentUrl: true,
+      attachmentName: true,
       author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
     }
   }
@@ -150,15 +153,31 @@ export const createChannel = async (req: Request, res: Response): Promise<void> 
   res.status(201).json({ channel });
 };
 
+const MESSAGE_PAGE_SIZE = 50;
+
 export const listMessages = async (req: Request, res: Response): Promise<void> => {
   const { channelId } = req.params;
+  const before = typeof req.query.before === "string" ? req.query.before : undefined;
+
   const messages = await prisma.message.findMany({
-    where: { channelId },
+    where: {
+      channelId,
+      ...(before ? { createdAt: { lt: (await prisma.message.findUnique({ where: { id: before }, select: { createdAt: true } }))?.createdAt } } : {})
+    },
     include: messageDetailsInclude,
-    orderBy: { createdAt: "asc" }
+    orderBy: { createdAt: "desc" },
+    take: MESSAGE_PAGE_SIZE
   });
 
-  res.json({ messages });
+  // Reverse to ascending order for the client
+  const ordered = messages.reverse();
+
+  // Determine whether older messages exist
+  const hasOlder = ordered.length > 0
+    ? (await prisma.message.count({ where: { channelId, createdAt: { lt: ordered[0].createdAt } } })) > 0
+    : false;
+
+  res.json({ messages: ordered, hasOlder });
 };
 
 export const createMessage = async (req: Request, res: Response): Promise<void> => {
@@ -173,6 +192,23 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
   if (!finalContent?.trim() && !attachmentUrl) {
     res.status(400).json({ message: "Message cannot be empty" });
     return;
+  }
+
+  // Check readOnly restriction
+  const channelForCheck = await prisma.channel.findUnique({
+    where: { id: channelId },
+    select: { readOnly: true, serverId: true }
+  });
+  if (channelForCheck?.readOnly) {
+    const member = await prisma.serverMember.findUnique({
+      where: { userId_serverId: { userId, serverId: channelForCheck.serverId } }
+    });
+    const server = await prisma.server.findUnique({ where: { id: channelForCheck.serverId }, select: { ownerId: true } });
+    const canPost = server?.ownerId === userId || member?.role === "ADMIN";
+    if (!canPost) {
+      res.status(403).json({ message: "This channel is read-only" });
+      return;
+    }
   }
 
   const message = await prismaAny.message.create({
@@ -280,6 +316,16 @@ export const toggleReaction = async (req: Request, res: Response): Promise<void>
   if (existing) {
     await prisma.messageReaction.delete({ where: { messageId_userId_emoji: { messageId, userId, emoji } } });
   } else {
+    // Enforce 20-unique-emoji limit
+    const uniqueEmojis = await prisma.messageReaction.findMany({
+      where: { messageId },
+      select: { emoji: true },
+      distinct: ["emoji"]
+    });
+    if (uniqueEmojis.length >= 20 && !uniqueEmojis.some((r) => r.emoji === emoji)) {
+      res.status(400).json({ message: "Reactions are limited to 20 unique emojis per message" });
+      return;
+    }
     await prisma.messageReaction.create({ data: { messageId, userId, emoji } });
   }
 
@@ -377,9 +423,111 @@ export const deleteCategory = async (req: Request, res: Response): Promise<void>
   res.json({ deleted: true });
 };
 
+export const updateCategory = async (req: Request, res: Response): Promise<void> => {
+  const { categoryId } = req.params;
+  const { name } = req.body as { name: string };
+
+  const trimmed = name?.trim();
+  if (!trimmed) {
+    res.status(400).json({ message: "Category name cannot be empty" });
+    return;
+  }
+
+  const category = await prisma.channelCategory.findUnique({ where: { id: categoryId }, select: { serverId: true } });
+  if (!category) {
+    res.status(404).json({ message: "Category not found" });
+    return;
+  }
+
+  const member = await prisma.serverMember.findUnique({
+    where: { userId_serverId: { userId: req.user!.id, serverId: category.serverId } }
+  });
+  const server = await prisma.server.findUnique({ where: { id: category.serverId }, select: { ownerId: true } });
+  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  const updated = await prisma.channelCategory.update({
+    where: { id: categoryId },
+    data: { name: trimmed }
+  });
+
+  const io = req.app.get("io");
+  io.emit("category:updated", { category: updated });
+
+  res.json({ category: updated });
+};
+
+export const reorderCategories = async (req: Request, res: Response): Promise<void> => {
+  const { serverId } = req.params;
+  const { items } = req.body as { items: { id: string; order: number }[] };
+
+  if (!Array.isArray(items)) {
+    res.status(400).json({ message: "items must be an array" });
+    return;
+  }
+
+  const member = await prisma.serverMember.findUnique({ where: { userId_serverId: { userId: req.user!.id, serverId } } });
+  const server = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
+  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  await prisma.$transaction(
+    items.map(({ id, order }) =>
+      prisma.channelCategory.update({ where: { id }, data: { order } })
+    )
+  );
+
+  const io = req.app.get("io");
+  io.emit("categories:reordered", { serverId, items });
+
+  res.json({ ok: true });
+};
+
+export const reorderChannels = async (req: Request, res: Response): Promise<void> => {
+  const { serverId } = req.params;
+  const { items } = req.body as { items: { id: string; order: number; categoryId?: string | null }[] };
+
+  if (!Array.isArray(items)) {
+    res.status(400).json({ message: "items must be an array" });
+    return;
+  }
+
+  const member = await prisma.serverMember.findUnique({ where: { userId_serverId: { userId: req.user!.id, serverId } } });
+  const server = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
+  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  await prisma.$transaction(
+    items.map(({ id, order, categoryId }) => {
+      const hasCat = Object.prototype.hasOwnProperty.call(
+        items.find((i) => i.id === id)!,
+        "categoryId"
+      );
+      return prisma.channel.update({
+        where: { id },
+        data: {
+          order,
+          ...(hasCat ? { categoryId: categoryId ?? null } : {})
+        }
+      });
+    })
+  );
+
+  const io = req.app.get("io");
+  io.emit("channels:reordered", { serverId, items });
+
+  res.json({ ok: true });
+};
+
 export const updateChannel = async (req: Request, res: Response): Promise<void> => {
   const { channelId } = req.params;
-  const { categoryId, name } = req.body as { categoryId?: string | null; name?: string };
+  const { categoryId, name, readOnly } = req.body as { categoryId?: string | null; name?: string; readOnly?: boolean };
 
   const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
   if (!channel) {
@@ -424,7 +572,8 @@ export const updateChannel = async (req: Request, res: Response): Promise<void> 
     where: { id: channelId },
     data: {
       ...(hasCategoryId ? { categoryId: categoryId ?? null } : {}),
-      ...(normalizedName !== undefined ? { name: normalizedName } : {})
+      ...(normalizedName !== undefined ? { name: normalizedName } : {}),
+      ...(typeof readOnly === "boolean" ? { readOnly } : {})
     }
   });
 

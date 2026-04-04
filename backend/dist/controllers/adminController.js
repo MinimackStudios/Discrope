@@ -11,7 +11,7 @@ const adminAudit_1 = require("../lib/adminAudit");
 const adminEvents_1 = require("../lib/adminEvents");
 const prismaAny = prisma_1.prisma;
 const DELETED_USERNAME = "deleteduser";
-const SYSTEM_USERNAME = "Discrope";
+const SYSTEM_USERNAME = "DiskChat";
 const toLocalUploadPath = (url) => {
     if (!url || !url.startsWith("/uploads/")) {
         return null;
@@ -152,7 +152,7 @@ const deleteUserAccountAsAdmin = async (req, res) => {
         return;
     }
     if (user.username === SYSTEM_USERNAME) {
-        res.status(400).json({ message: "The Discrope system user cannot be deleted" });
+        res.status(400).json({ message: "The DiskChat system user cannot be deleted" });
         return;
     }
     const deletedUserId = await getOrCreateDeletedUserId();

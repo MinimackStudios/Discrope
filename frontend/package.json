@@ -1,5 +1,5 @@
 {
-  "name": "discrope-frontend",
+  "name": "diskchat-frontend",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
     "@fontsource-variable/noto-sans": "^5.2.10",
     "@fontsource-variable/source-sans-3": "^5.2.9",
     "axios": "^1.7.9",

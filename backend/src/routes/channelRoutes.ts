@@ -10,8 +10,11 @@ import {
   editMessage,
   listMessages,
   pinnedMessages,
+  reorderCategories,
+  reorderChannels,
   togglePin,
   toggleReaction,
+  updateCategory,
   updateChannel
 } from "../controllers/channelController";
 import { authMiddleware } from "../middleware/auth";
@@ -23,6 +26,8 @@ const router = Router();
 router.use(authMiddleware);
 
 router.post("/servers/:serverId/categories", body("name").isLength({ min: 1, max: 64 }), validateRequest, createCategory);
+router.patch("/servers/:serverId/categories/reorder", reorderCategories);
+router.patch("/categories/:categoryId", body("name").isLength({ min: 1, max: 64 }), validateRequest, updateCategory);
 router.delete("/categories/:categoryId", deleteCategory);
 router.post(
   "/servers/:serverId/channels",
@@ -31,6 +36,7 @@ router.post(
   validateRequest,
   createChannel
 );
+router.patch("/servers/:serverId/channels/reorder", reorderChannels);
 router.delete("/channels/:channelId", deleteChannel);
 router.patch("/channels/:channelId", updateChannel);
 

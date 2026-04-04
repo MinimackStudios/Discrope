@@ -1,5 +1,9 @@
 {
   "css.lint.unknownAtRules": "ignore",
   "scss.lint.unknownAtRules": "ignore",
-  "less.lint.unknownAtRules": "ignore"
+  "less.lint.unknownAtRules": "ignore",
+  "chat.tools.terminal.autoApprove": {
+    "npx tsc": true,
+    "npx prisma": true
+  }
 }

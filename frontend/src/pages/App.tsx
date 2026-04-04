@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Search, Shield, UserPlus } from "lucide-react";
 import ServerBar from "../components/ServerBar";
 import ChannelList from "../components/ChannelList";
@@ -15,14 +16,20 @@ import ServerSettingsModal from "../components/ServerSettingsModal";
 import UserProfileModal from "../components/UserProfileModal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import InputDialog from "../components/InputDialog";
+import NickColorModal from "../components/NickColorModal";
+import ChannelSettingsModal from "../components/ChannelSettingsModal";
+import SystemNoticeBanner from "../components/SystemNoticeBanner";
 import { useAuthStore } from "../lib/stores/authStore";
 import { useChatStore } from "../lib/stores/chatStore";
+import { useSystemStore } from "../lib/stores/systemStore";
 import { api } from "../lib/api";
-import type { User } from "../types";
+import type { Channel, User } from "../types";
 
 const MainPage = (): JSX.Element => {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const apiUnreachable = useSystemStore((s) => s.apiUnreachable);
 
   const {
     servers,
@@ -38,6 +45,7 @@ const MainPage = (): JSX.Element => {
     outgoingPendingFriends,
     typingByChannel,
     channelOpenFocusMessageId,
+    dmChannelOpenFocusMessageId,
     unreadByChannel,
     mentionUnreadByChannel,
     unreadDMs,
@@ -61,6 +69,9 @@ const MainPage = (): JSX.Element => {
     hideDM,
     bindSocketEvents
   } = useChatStore();
+
+  const notices = useChatStore((s) => s.notices);
+  const dismissNotice = useChatStore((s) => s.dismissNotice);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createServerOpen, setCreateServerOpen] = useState(false);
@@ -87,6 +98,8 @@ const MainPage = (): JSX.Element => {
     danger?: boolean;
     onConfirm: (value: string) => void | Promise<void>;
   }>({ open: false, title: "", onConfirm: () => undefined });
+  const [nickColorServerId, setNickColorServerId] = useState<string | null>(null);
+  const [channelSettingsTarget, setChannelSettingsTarget] = useState<Channel | null>(null);
 
   const activeServer = useMemo(
     () => servers.find((server) => server.id === activeServerId) ?? null,
@@ -96,7 +109,12 @@ const MainPage = (): JSX.Element => {
   const activeDM = dms.find((dm) => dm.id === activeDMId) ?? null;
   const visibleDMs = useMemo(() => dms.filter((dm) => !hiddenDMIds[dm.id]), [dms, hiddenDMIds]);
   const homeActive = mode === "DM";
-  const activeDMUser = activeDM?.participants.find((p) => p.id !== user?.id) ?? null;
+  const activeDMUser = useMemo(() => {
+    const base = activeDM?.participants.find((p) => p.id !== user?.id) ?? null;
+    if (!base) return null;
+    const friendMatch = friends.find((f) => f.id === base.id);
+    return friendMatch?.friendsSince ? { ...base, friendsSince: friendMatch.friendsSince } : base;
+  }, [activeDM, user?.id, friends]);
   const isServerOwner = activeServer?.ownerId === user?.id;
   const hasServers = servers.length > 0;
 
@@ -169,6 +187,32 @@ const MainPage = (): JSX.Element => {
   useEffect(() => {
     bindSocketEvents(user);
   }, [bindSocketEvents, user]);
+
+  useEffect(() => {
+    if (user && apiUnreachable) {
+      navigate("/status", { replace: true });
+    }
+  }, [apiUnreachable, navigate, user]);
+
+  // Dynamic tab title: "(N) #channel | Server" or "(N) @user | DiskChat"
+  useEffect(() => {
+    const mentionUnread = Object.values(mentionUnreadByChannel).reduce((a, b) => a + b, 0);
+    const dmUnread = Object.values(unreadDMs).reduce((a, b) => a + b, 0);
+    const totalUnread = mentionUnread + dmUnread;
+    const prefix = totalUnread > 0 ? `(${totalUnread}) ` : "";
+
+    let context = "DiskChat";
+    if (mode === "SERVER" && activeChannel) {
+      context = `#${activeChannel.name} | ${activeServer?.name ?? "DiskChat"}`;
+    } else if (mode === "DM" && activeDMUser) {
+      const dmName = activeDMUser.nickname?.trim() || activeDMUser.username;
+      context = `@${dmName} | DiskChat`;
+    } else if (mode === "DM") {
+      context = "Home | DiskChat";
+    }
+
+    document.title = `${prefix}${context}`;
+  }, [mode, activeChannel, activeServer, activeDMUser, mentionUnreadByChannel, unreadDMs]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -398,12 +442,55 @@ const MainPage = (): JSX.Element => {
                 mentionUnreadByChannel={mentionUnreadByChannel}
                 onSelectChannel={(id) => void setActiveChannel(id)}
                 onCreateChannel={() => setCreateChannelOpen(true)}
+                onCreateCategory={() => {
+                  openInput({
+                    title: "Create Category",
+                    placeholder: "category name",
+                    confirmLabel: "Create",
+                    onConfirm: async (name) => {
+                      if (!name.trim() || !activeServerId) return;
+                      await api.post(`/chat/servers/${activeServerId}/categories`, { name: name.trim() });
+                      await setActiveServer(activeServerId);
+                      setInputState((s) => ({ ...s, open: false }));
+                    }
+                  });
+                }}
                 onLeaveServer={() => leaveCurrentServer()}
                 canManage={Boolean(isServerOwner)}
                 onDeleteChannel={(id) => deleteChannel(id)}
                 onRenameChannel={(id) => renameChannel(id)}
                 onDeleteCategory={(id) => deleteCategory(id)}
+                onRenameCategory={(id) => {
+                  const current = activeServer?.categories.find((c) => c.id === id);
+                  openInput({
+                    title: "Rename Category",
+                    placeholder: "CATEGORY NAME",
+                    initialValue: current?.name ?? "",
+                    confirmLabel: "Save",
+                    onConfirm: async (nextName) => {
+                      if (!nextName.trim()) return;
+                      await api.patch(`/chat/categories/${id}`, { name: nextName.trim() });
+                      if (activeServerId) await setActiveServer(activeServerId);
+                      setInputState((s) => ({ ...s, open: false }));
+                    }
+                  });
+                }}
                 onMoveChannel={(channelId, categoryId) => void moveChannel(channelId, categoryId)}
+                onReorderCategories={async (items) => {
+                  if (!activeServerId) return;
+                  await api.patch(`/chat/servers/${activeServerId}/categories/reorder`, { items });
+                }}
+                onReorderChannels={async (items) => {
+                  if (!activeServerId) return;
+                  await api.patch(`/chat/servers/${activeServerId}/channels/reorder`, { items });
+                }}
+                onToggleReadOnly={async (channelId) => {
+                  const ch = activeServer?.channels.find((c) => c.id === channelId);
+                  if (!ch || !activeServerId) return;
+                  await api.patch(`/chat/channels/${channelId}`, { readOnly: !ch.readOnly });
+                  await setActiveServer(activeServerId);
+                }}
+                onOpenChannelSettings={(channel) => setChannelSettingsTarget(channel)}
               />
             ) : (
               <div className="flex-1" />
@@ -414,6 +501,7 @@ const MainPage = (): JSX.Element => {
             user={user}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenOwnProfile={() => setProfileUser(user)}
+            onSetNickColor={mode === "SERVER" && activeServerId ? () => setNickColorServerId(activeServerId) : undefined}
           />
         </div>
 
@@ -432,11 +520,12 @@ const MainPage = (): JSX.Element => {
             mode={mode}
             channelName={mode === "SERVER" ? activeChannel?.name ?? "general" : activeDMName}
             messages={mode === "SERVER" ? messages : dmMessages}
-            focusMessageId={mode === "SERVER" ? channelOpenFocusMessageId : null}
+            focusMessageId={mode === "SERVER" ? channelOpenFocusMessageId : dmChannelOpenFocusMessageId}
             typingUsers={(typingByChannel[mode === "SERVER" ? (activeChannelId ?? "") : (activeDMId ?? "")] ?? []).map((entry) => entry.displayName)}
             mentionMembers={activeServer?.members ?? []}
             onOpenProfile={setProfileUser}
             canModerateServerMessages={Boolean(isServerOwner)}
+            channelReadOnly={mode === "SERVER" ? Boolean(activeChannel?.readOnly) : false}
             onKickMember={(memberId) => kickMember(memberId)}
             onBanMember={(memberId) => banMember(memberId)}
           />
@@ -453,6 +542,7 @@ const MainPage = (): JSX.Element => {
             ownerId={activeServer?.ownerId}
             onKick={(memberId) => kickMember(memberId)}
             onBan={(memberId) => banMember(memberId)}
+            onSetNickColor={() => setNickColorServerId(activeServerId)}
           />
         )}
       </div>
@@ -603,6 +693,30 @@ const MainPage = (): JSX.Element => {
         }}
         onCancel={() => setInputState((s) => ({ ...s, open: false }))}
       />
+      <NickColorModal
+        open={nickColorServerId !== null}
+        serverId={nickColorServerId ?? ""}
+        currentColor={nickColorServerId ? (servers.find((s) => s.id === nickColorServerId)?.members.find((m) => m.userId === user.id)?.nickColor ?? null) : null}
+        onClose={() => setNickColorServerId(null)}
+        onApplied={() => setNickColorServerId(null)}
+      />
+      <ChannelSettingsModal
+        open={channelSettingsTarget !== null}
+        channel={channelSettingsTarget}
+        onClose={() => setChannelSettingsTarget(null)}
+        onRename={async (channelId, name) => {
+          await api.patch(`/chat/channels/${channelId}`, { name });
+          if (activeServerId) await setActiveServer(activeServerId);
+        }}
+        onToggleReadOnly={async (channelId) => {
+          const ch = activeServer?.channels.find((c) => c.id === channelId);
+          if (!ch) return;
+          await api.patch(`/chat/channels/${channelId}`, { readOnly: !ch.readOnly });
+          if (activeServerId) await setActiveServer(activeServerId);
+        }}
+        onDelete={(channelId) => deleteChannel(channelId)}
+      />
+      <SystemNoticeBanner notices={notices} onDismiss={dismissNotice} />
     </main>
   );
 };

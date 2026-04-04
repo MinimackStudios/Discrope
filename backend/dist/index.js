@@ -55,9 +55,19 @@ app.use((0, helmet_1.default)({
 }));
 app.use(express_1.default.json({ limit: "2mb" }));
 app.use((0, cookie_parser_1.default)());
-app.use("/uploads", express_1.default.static(node_path_1.default.resolve(process.cwd(), "uploads")));
+app.get("/uploads/attachments/:fileName", (req, res, next) => {
+    const requestedName = typeof req.query.name === "string" && req.query.name.trim().length > 0
+        ? req.query.name
+        : req.params.fileName;
+    const safeName = node_path_1.default.basename(requestedName).replace(/[\r\n"]/g, "_");
+    const dispositionType = req.query.download === "1" ? "attachment" : "inline";
+    const encodedName = encodeURIComponent(safeName);
+    res.setHeader("Content-Disposition", `${dispositionType}; filename="${safeName}"; filename*=UTF-8''${encodedName}`);
+    next();
+});
+app.use("/uploads", express_1.default.static(node_path_1.default.resolve(process.cwd(), "uploads"), { maxAge: "7d" }));
 app.get("/health", (_req, res) => {
-    res.json({ ok: true, service: "discrope-backend" });
+    res.json({ ok: true, service: "diskchat-backend" });
 });
 app.use("/api/auth", authRoutes_1.default);
 app.use("/api/admin", adminRoutes_1.default);
@@ -72,5 +82,5 @@ app.use((err, _req, res, _next) => {
 const port = Number(process.env.PORT ?? 4000);
 server.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`Discrope backend listening on http://localhost:${port}`);
+    console.log(`DiskChat backend listening on http://localhost:${port}`);
 });

@@ -11,7 +11,7 @@ const adminAudit_1 = require("../lib/adminAudit");
 const prismaAny = prisma_1.prisma;
 const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const DELETED_USERNAME = "deleteduser";
-const SYSTEM_USERNAME = "Discrope";
+const SYSTEM_USERNAME = "DiskChat";
 const toLocalUploadPath = (url) => {
     if (!url || !url.startsWith("/uploads/")) {
         return null;

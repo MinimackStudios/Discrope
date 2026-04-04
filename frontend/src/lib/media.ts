@@ -1,4 +1,11 @@
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
+const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
+const DELETED_AVATAR_URL = `${import.meta.env.BASE_URL}deleted-avatar.svg`;
+
+type AvatarLike = {
+  avatarUrl?: string | null;
+  isDeleted?: boolean;
+};
 
 const getBackendOrigin = (): string => {
   if (typeof window === "undefined") {
@@ -31,4 +38,12 @@ export const resolveMediaUrl = (value?: string | null): string | null | undefine
   }
 
   return value;
+};
+
+export const resolveUserAvatarUrl = (user?: AvatarLike | null): string => {
+  if (user?.isDeleted) {
+    return DELETED_AVATAR_URL;
+  }
+
+  return resolveMediaUrl(user?.avatarUrl) || DEFAULT_AVATAR_URL;
 };

@@ -1,18 +1,16 @@
 import { FormEvent, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { api } from "../lib/api";
-import { resolveMediaUrl } from "../lib/media";
+import { resolveUserAvatarUrl } from "../lib/media";
 import { useBackdropClose } from "../lib/useBackdropClose";
 import type { Server, ServerMember } from "../types";
 import AvatarCropModal from "./AvatarCropModal";
 import StatusDot from "./StatusDot";
 
-const SYSTEM_USERNAME = "Discrope";
-const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
-
+const SYSTEM_USERNAME = "DiskChat";
 type BannedUser = {
   userId: string;
-  user: { id: string; username: string; nickname?: string; avatarUrl?: string | null; status?: "ONLINE" | "IDLE" | "DND" | "INVISIBLE" | "OFFLINE" };
+  user: { id: string; username: string; nickname?: string; avatarUrl?: string | null; isDeleted?: boolean; status?: "ONLINE" | "IDLE" | "DND" | "INVISIBLE" | "OFFLINE" };
 };
 
 type Props = {
@@ -136,7 +134,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
               <h2 className="mb-3 text-lg font-semibold">Server Settings</h2>
               <label className="block text-xs text-discord-muted">
                 Server Name
-                <input className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm" value={name} onChange={(e) => setName(e.target.value)} />
+                <input className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm text-white" value={name} onChange={(e) => setName(e.target.value)} />
               </label>
               <label className="mt-3 block text-xs text-discord-muted">
                 Icon
@@ -159,7 +157,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
               <label className="mt-3 block text-xs text-discord-muted">
                 Invite Code
                 <input
-                  className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm"
+                  className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm text-white"
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value.toLowerCase().replace(/\s+/g, ""))}
                   placeholder="my-server"
@@ -175,7 +173,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
                   onClick={async () => {
                     const code = await onRegenerateInvite(inviteCode);
                     if (code) {
-                      const link = `${window.location.origin}/Discrope/invite/${code}`;
+                      const link = `${window.location.origin}/DiskChat/invite/${code}`;
                       await navigator.clipboard.writeText(link);
                     }
                   }}
@@ -199,7 +197,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
                 {members.map((member) => (
                   <div key={member.userId} className="flex items-center gap-3 rounded bg-[#1e1f22] px-3 py-2">
                     <div className="relative h-8 w-8 shrink-0">
-                      <img src={resolveMediaUrl(member.user.avatarUrl) || DEFAULT_AVATAR_URL} alt={member.user.username} className="h-8 w-8 rounded-full" />
+                      <img src={resolveUserAvatarUrl(member.user)} alt={member.user.username} className="h-8 w-8 rounded-full" />
                       <span className="absolute -bottom-0.5 -right-0.5">
                         <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#1e1f22]" />
                       </span>
@@ -235,7 +233,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
                 {bans.map((ban) => (
                   <div key={ban.userId} className="flex items-center gap-3 rounded bg-[#1e1f22] px-3 py-2">
                     <div className="relative h-8 w-8 shrink-0">
-                      <img src={resolveMediaUrl(ban.user.avatarUrl) || DEFAULT_AVATAR_URL} alt={ban.user.username} className="h-8 w-8 rounded-full" />
+                      <img src={resolveUserAvatarUrl(ban.user)} alt={ban.user.username} className="h-8 w-8 rounded-full" />
                       <span className="absolute -bottom-0.5 -right-0.5">
                         <StatusDot status={ban.user.status ?? "OFFLINE"} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#1e1f22]" />
                       </span>

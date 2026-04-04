@@ -1,4 +1,4 @@
-﻿import type { Request, Response } from "express";
+import type { Request, Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { v4 as uuid } from "uuid";
@@ -8,7 +8,7 @@ import { logAdminEvent } from "../lib/adminAudit";
 const prismaAny = prisma as any;
 
 const makeInviteCode = (): string => uuid().replace(/-/g, "").slice(0, 8);
-const SYSTEM_USERNAME = "Discrope";
+const SYSTEM_USERNAME = "DiskChat";
 const SYSTEM_AVATAR_URL = "/disc.png";
 
 const getOrCreateSystemUserId = async (): Promise<string> => {
@@ -382,7 +382,7 @@ export const deleteServer = async (req: Request, res: Response): Promise<void> =
   const userId = req.user!.id;
   const { serverId } = req.params;
 
-  const existing = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true, iconUrl: true } });
+  const existing = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true, iconUrl: true, name: true } });
   if (!existing || existing.ownerId !== userId) {
     res.status(403).json({ message: "Only server owner can delete server" });
     return;
@@ -394,7 +394,7 @@ export const deleteServer = async (req: Request, res: Response): Promise<void> =
 
   await logAdminEvent({
     type: "SERVER_DELETED",
-    summary: `Server deleted: ${serverId}`,
+    summary: `Server deleted: ${existing.name || serverId}`,
     actorUserId: userId,
     actorUsername: req.user!.username,
     targetServerId: serverId
@@ -513,5 +513,49 @@ export const unbanMember = async (req: Request, res: Response): Promise<void> =>
 
   await prismaAny.serverBan.deleteMany({ where: { userId: memberId, serverId } });
   res.json({ unbanned: true });
+};
+
+const VALID_HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+export const updateMyMembership = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const { serverId } = req.params;
+  const { nickColor } = req.body as { nickColor?: string | null };
+
+  const membership = await prismaAny.serverMember.findUnique({
+    where: { userId_serverId: { userId, serverId } }
+  });
+  if (!membership) {
+    res.status(404).json({ message: "Not a member of this server" });
+    return;
+  }
+
+  const data: { nickColor?: string | null } = {};
+
+  if (nickColor !== undefined) {
+    if (nickColor !== null && !VALID_HEX_COLOR.test(nickColor)) {
+      res.status(400).json({ message: "Invalid color format" });
+      return;
+    }
+    data.nickColor = nickColor ?? null;
+  }
+
+  const updated = await prismaAny.serverMember.update({
+    where: { userId_serverId: { userId, serverId } },
+    data,
+    include: {
+      user: {
+        select: {
+          id: true, username: true, nickname: true, avatarUrl: true,
+          status: true, aboutMe: true, customStatus: true
+        }
+      }
+    }
+  });
+
+  const io = req.app.get("io");
+  io.emit("server:member:updated", { serverId, member: updated });
+
+  res.json({ member: updated });
 };
 

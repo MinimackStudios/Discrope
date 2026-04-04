@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const dmController_1 = require("../controllers/dmController");
+const dmController_2 = require("../controllers/dmController");
 const auth_1 = require("../middleware/auth");
 const upload_1 = require("../middleware/upload");
 const express_validator_1 = require("express-validator");
@@ -13,5 +14,6 @@ router.post("/", dmController_1.createOrGetDM);
 router.get("/:dmChannelId/messages", dmController_1.listDMMessages);
 router.post("/:dmChannelId/messages", upload_1.uploadAttachment.single("attachment"), (0, express_validator_1.body)("content").optional().isLength({ min: 0, max: 4000 }), validate_1.validateRequest, dmController_1.createDMMessage);
 router.patch("/:dmChannelId/messages/:messageId", (0, express_validator_1.body)("content").isLength({ min: 1, max: 4000 }), validate_1.validateRequest, dmController_1.editDMMessage);
+router.post("/:dmChannelId/messages/:messageId/reactions", (0, express_validator_1.body)("emoji").isLength({ min: 1, max: 64 }), validate_1.validateRequest, dmController_2.toggleDMReaction);
 router.delete("/:dmChannelId/messages/:messageId", dmController_1.deleteDMMessage);
 exports.default = router;

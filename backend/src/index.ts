@@ -1,4 +1,4 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 import path from "node:path";
 import http from "node:http";
 import express from "express";
@@ -61,10 +61,22 @@ app.use(
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 
-app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+app.get("/uploads/attachments/:fileName", (req, res, next) => {
+  const requestedName = typeof req.query.name === "string" && req.query.name.trim().length > 0
+    ? req.query.name
+    : req.params.fileName;
+  const safeName = path.basename(requestedName).replace(/[\r\n"]/g, "_");
+  const dispositionType = req.query.download === "1" ? "attachment" : "inline";
+  const encodedName = encodeURIComponent(safeName);
+
+  res.setHeader("Content-Disposition", `${dispositionType}; filename="${safeName}"; filename*=UTF-8''${encodedName}`);
+  next();
+});
+
+app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), { maxAge: "7d" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "discrope-backend" });
+  res.json({ ok: true, service: "diskchat-backend" });
 });
 
 app.use("/api/auth", authRoutes);
@@ -82,7 +94,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 const port = Number(process.env.PORT ?? 4000);
 server.listen(port, () => {
   // eslint-disable-next-line no-console
-  console.log(`Discrope backend listening on http://localhost:${port}`);
+  console.log(`DiskChat backend listening on http://localhost:${port}`);
 });
 
 

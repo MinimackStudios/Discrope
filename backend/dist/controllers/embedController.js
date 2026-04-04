@@ -140,7 +140,7 @@ const fetchEmbedPreview = async (targetUrl) => {
     const response = await fetch(parsedUrl, {
         headers: {
             accept: "text/html,application/xhtml+xml",
-            "user-agent": "DiscropeBot/1.0 (+https://discrope.local/embed-preview)"
+            "user-agent": "DiskChatBot/1.0 (+https://diskchat.local/embed-preview)"
         },
         redirect: "follow",
         signal: AbortSignal.timeout(8000)

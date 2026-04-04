@@ -20,6 +20,9 @@ type Props = {
   onApply: (file: File) => void;
   title?: string;
   cropShape?: "rect" | "round";
+  aspect?: number;
+  outputWidth?: number;
+  outputHeight?: number;
   outputFileName?: string;
 };
 
@@ -33,10 +36,10 @@ const createImage = (url: string): Promise<HTMLImageElement> =>
 
 const OUTPUT_SIZE = 512;
 
-const drawCroppedFrame = (source: CanvasImageSource, crop: Area): Uint8ClampedArray => {
+const drawCroppedFrame = (source: CanvasImageSource, crop: Area, outW = OUTPUT_SIZE, outH = OUTPUT_SIZE): Uint8ClampedArray => {
   const canvas = document.createElement("canvas");
-  canvas.width = OUTPUT_SIZE;
-  canvas.height = OUTPUT_SIZE;
+  canvas.width = outW;
+  canvas.height = outH;
 
   const ctx = canvas.getContext("2d");
   if (!ctx) {
@@ -61,7 +64,7 @@ const cloneClampedArray = (source: Uint8ClampedArray): Uint8ClampedArray<ArrayBu
   return clone as Uint8ClampedArray<ArrayBuffer>;
 };
 
-const getCroppedGifFile = async (sourceFile: File, crop: Area, outputFileName: string): Promise<File> => {
+const getCroppedGifFile = async (sourceFile: File, crop: Area, outputFileName: string, outW = OUTPUT_SIZE, outH = OUTPUT_SIZE): Promise<File> => {
   const arrayBuffer = await sourceFile.arrayBuffer();
   const parsedGif = parseGIF(arrayBuffer);
   const frames = decompressFrames(parsedGif, true);
@@ -100,7 +103,7 @@ const getCroppedGifFile = async (sourceFile: File, crop: Area, outputFileName: s
 
     frameCtx.putImageData(new ImageData(cloneClampedArray(frame.patch), frame.dims.width, frame.dims.height), frame.dims.left, frame.dims.top);
 
-    const croppedRgba = drawCroppedFrame(frameCanvas, crop);
+    const croppedRgba = drawCroppedFrame(frameCanvas, crop, outW, outH);
     const palette = quantize(croppedRgba, 256, {
       format: "rgba4444",
       oneBitAlpha: true,
@@ -109,7 +112,7 @@ const getCroppedGifFile = async (sourceFile: File, crop: Area, outputFileName: s
     const transparentIndex = findTransparentIndex(palette);
     const indexed = applyPalette(croppedRgba, palette, "rgba4444");
 
-    gif.writeFrame(indexed, OUTPUT_SIZE, OUTPUT_SIZE, {
+    gif.writeFrame(indexed, outW, outH, {
       palette,
       transparent: transparentIndex !== -1,
       transparentIndex: transparentIndex === -1 ? 0 : transparentIndex,
@@ -132,11 +135,11 @@ const getCroppedGifFile = async (sourceFile: File, crop: Area, outputFileName: s
   return new File([Uint8Array.from(gif.bytes())], outputFileName, { type: "image/gif" });
 };
 
-const getCroppedAvatarFile = async (imageSrc: string, crop: Area, outputFileName: string): Promise<File> => {
+const getCroppedAvatarFile = async (imageSrc: string, crop: Area, outputFileName: string, outW = OUTPUT_SIZE, outH = OUTPUT_SIZE): Promise<File> => {
   const image = await createImage(imageSrc);
   const canvas = document.createElement("canvas");
-  canvas.width = OUTPUT_SIZE;
-  canvas.height = OUTPUT_SIZE;
+  canvas.width = outW;
+  canvas.height = outH;
 
   const ctx = canvas.getContext("2d");
   if (!ctx) {
@@ -151,8 +154,8 @@ const getCroppedAvatarFile = async (imageSrc: string, crop: Area, outputFileName
     crop.height,
     0,
     0,
-    canvas.width,
-    canvas.height
+    outW,
+    outH
   );
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png", 0.95));
@@ -171,6 +174,9 @@ const AvatarCropModal = ({
   onApply,
   title = "Edit Image",
   cropShape = "round",
+  aspect = 1,
+  outputWidth = OUTPUT_SIZE,
+  outputHeight = OUTPUT_SIZE,
   outputFileName = "avatar.png"
 }: Props): JSX.Element | null => {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -208,8 +214,8 @@ const AvatarCropModal = ({
     try {
       setBusy(true);
       const file = sourceFile?.type === "image/gif"
-        ? await getCroppedGifFile(sourceFile, cropPixels, outputFileName)
-        : await getCroppedAvatarFile(image, cropPixels, outputFileName);
+        ? await getCroppedGifFile(sourceFile, cropPixels, outputFileName, outputWidth, outputHeight)
+        : await getCroppedAvatarFile(image, cropPixels, outputFileName, outputWidth, outputHeight);
       onApply(file);
       onClose();
       reset();
@@ -245,12 +251,12 @@ const AvatarCropModal = ({
           </button>
         </div>
 
-        <div className="relative h-[320px] w-full overflow-hidden rounded-lg bg-[#11131a]">
+        <div className="relative w-full overflow-hidden rounded-lg bg-[#11131a]" style={{ height: aspect >= 2 ? 220 : 320 }}>
           <Cropper
             image={image}
             crop={crop}
             zoom={zoom}
-            aspect={1}
+            aspect={aspect}
             cropShape={cropShape}
             showGrid={false}
             onCropChange={setCrop}

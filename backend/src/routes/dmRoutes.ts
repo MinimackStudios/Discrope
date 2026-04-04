@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { createDMMessage, createOrGetDM, deleteDMMessage, editDMMessage, listDMMessages, listDMs } from "../controllers/dmController";
+import { toggleDMReaction } from "../controllers/dmController";
 import { authMiddleware } from "../middleware/auth";
 import { uploadAttachment } from "../middleware/upload";
 import { body } from "express-validator";
@@ -20,6 +21,7 @@ router.post(
 	createDMMessage
 );
 router.patch("/:dmChannelId/messages/:messageId", body("content").isLength({ min: 1, max: 4000 }), validateRequest, editDMMessage);
+router.post("/:dmChannelId/messages/:messageId/reactions", body("emoji").isLength({ min: 1, max: 64 }), validateRequest, toggleDMReaction);
 router.delete("/:dmChannelId/messages/:messageId", deleteDMMessage);
 
 export default router;

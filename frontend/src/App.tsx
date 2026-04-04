@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import LoginPage from "./pages/Login";
 import MainPage from "./pages/App";
 import JoinInvitePage from "./pages/JoinInvite";
+import StatusPage from "./pages/Status";
 import { useAuthStore } from "./lib/stores/authStore";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -21,6 +22,7 @@ const AppRouter = (): JSX.Element => {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/status" element={<StatusPage />} />
       <Route
         path="/invite/:inviteCode"
         element={<JoinInvitePage />}

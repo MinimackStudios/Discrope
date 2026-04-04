@@ -1,12 +1,10 @@
 import { type MouseEvent, useEffect, useState } from "react";
-import { resolveMediaUrl } from "../lib/media";
+import { resolveUserAvatarUrl } from "../lib/media";
 import type { ServerMember, User } from "../types";
 import { formatStatusLabel } from "../lib/formatStatus";
 import StatusDot from "./StatusDot";
 
-const SYSTEM_USERNAME = "Discrope";
-const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
-
+const SYSTEM_USERNAME = "DiskChat";
 type Props = {
   members: ServerMember[];
   onSelectUser: (user: User) => void;
@@ -15,15 +13,17 @@ type Props = {
   ownerId?: string;
   onKick?: (memberId: string) => void;
   onBan?: (memberId: string) => void;
+  onSetNickColor?: () => void;
 };
 
 type ContextMenuState = {
   x: number;
   y: number;
   memberId: string;
+  isSelf: boolean;
 };
 
-const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId, ownerId, onKick, onBan }: Props): JSX.Element => {
+const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId, ownerId, onKick, onBan, onSetNickColor }: Props): JSX.Element => {
   const activeStatuses = new Set(["ONLINE", "IDLE", "DND"]);
   const online = members.filter((m) => activeStatuses.has(m.user.status));
   const offline = members.filter((m) => !activeStatuses.has(m.user.status));
@@ -40,18 +40,24 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
   }, []);
 
   const handleMemberContextMenu = (event: MouseEvent<HTMLDivElement>, member: ServerMember): void => {
-    if (!canModerate || !onKick || !onBan) {
-      return;
-    }
     if (member.user.username === SYSTEM_USERNAME) {
       return;
     }
     const memberId = member.userId;
-    if (!currentUserId || memberId === currentUserId || (ownerId && memberId === ownerId)) {
+    const isSelf = Boolean(currentUserId && memberId === currentUserId);
+    if (isSelf && onSetNickColor) {
+      event.preventDefault();
+      setContextMenu({ x: event.clientX, y: event.clientY, memberId, isSelf: true });
+      return;
+    }
+    if (!canModerate || !onKick || !onBan) {
+      return;
+    }
+    if (!currentUserId || (ownerId && memberId === ownerId)) {
       return;
     }
     event.preventDefault();
-    setContextMenu({ x: event.clientX, y: event.clientY, memberId });
+    setContextMenu({ x: event.clientX, y: event.clientY, memberId, isSelf: false });
   };
 
   return (
@@ -72,7 +78,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                 >
                   <div className="relative h-8 w-8 shrink-0">
                     <img
-                      src={resolveMediaUrl(member.user.avatarUrl) || DEFAULT_AVATAR_URL}
+                      src={resolveUserAvatarUrl(member.user)}
                       alt={member.user.username}
                       className="h-8 w-8 rounded-full"
                     />
@@ -81,7 +87,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-white">{displayName}</p>
+                    <p className="truncate text-sm font-medium" style={{ color: member.nickColor ?? "white" }}>{displayName}</p>
                     <p className="truncate text-[11px] text-discord-muted">{secondary}</p>
                   </div>
                 </div>
@@ -105,7 +111,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                 >
                   <div className="relative h-8 w-8 shrink-0">
                     <img
-                      src={resolveMediaUrl(member.user.avatarUrl) || DEFAULT_AVATAR_URL}
+                      src={resolveUserAvatarUrl(member.user)}
                       alt={member.user.username}
                       className="h-8 w-8 rounded-full opacity-70"
                     />
@@ -114,7 +120,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{displayName}</p>
+                    <p className="truncate text-sm font-medium" style={{ color: member.nickColor ? `${member.nickColor}99` : undefined }}>{displayName}</p>
                     <p className="truncate text-[11px]">{secondary}</p>
                   </div>
                 </div>
@@ -126,28 +132,42 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
 
       {contextMenu ? (
         <div
-          className="fixed z-50 w-36 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg"
+          className="fixed z-50 w-44 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(event) => event.stopPropagation()}
         >
-          <button
-            className="w-full px-3 py-2 text-left text-sm text-[#f0b232] hover:bg-[#2b2d31]"
-            onClick={() => {
-              onKick?.(contextMenu.memberId);
-              setContextMenu(null);
-            }}
-          >
-            Kick Member
-          </button>
-          <button
-            className="w-full px-3 py-2 text-left text-sm text-[#ed4245] hover:bg-[#2b2d31]"
-            onClick={() => {
-              onBan?.(contextMenu.memberId);
-              setContextMenu(null);
-            }}
-          >
-            Ban Member
-          </button>
+          {contextMenu.isSelf ? (
+            <button
+              className="w-full px-3 py-2 text-left text-sm text-discord-text hover:bg-[#2b2d31]"
+              onClick={() => {
+                onSetNickColor?.();
+                setContextMenu(null);
+              }}
+            >
+              Set Nickname Color
+            </button>
+          ) : (
+            <>
+              <button
+                className="w-full px-3 py-2 text-left text-sm text-[#f0b232] hover:bg-[#2b2d31]"
+                onClick={() => {
+                  onKick?.(contextMenu.memberId);
+                  setContextMenu(null);
+                }}
+              >
+                Kick Member
+              </button>
+              <button
+                className="w-full px-3 py-2 text-left text-sm text-[#ed4245] hover:bg-[#2b2d31]"
+                onClick={() => {
+                  onBan?.(contextMenu.memberId);
+                  setContextMenu(null);
+                }}
+              >
+                Ban Member
+              </button>
+            </>
+          )}
         </div>
       ) : null}
     </aside>

@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import type { Server as IOServer } from "socket.io";
 import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "../lib/prisma";
@@ -7,7 +8,7 @@ import { adminEventsBus } from "../lib/adminEvents";
 
 const prismaAny = prisma as any;
 const DELETED_USERNAME = "deleteduser";
-const SYSTEM_USERNAME = "Discrope";
+const SYSTEM_USERNAME = "DiskChat";
 
 const toLocalUploadPath = (url?: string | null): string | null => {
   if (!url || !url.startsWith("/uploads/")) {
@@ -45,6 +46,27 @@ const getOrCreateDeletedUserId = async (): Promise<string> => {
   });
 
   return created.id;
+};
+
+export const broadcastNotice = async (req: Request, res: Response): Promise<void> => {
+  const title = typeof req.body.title === "string" ? req.body.title.trim() : "";
+  const body = typeof req.body.body === "string" ? req.body.body.trim() : "";
+
+  if (!title || !body) {
+    res.status(400).json({ message: "title and body are required" });
+    return;
+  }
+
+  const io = req.app.get("io") as IOServer;
+  io.emit("notice:broadcast", { title, body });
+
+  await logAdminEvent({
+    type: "NOTICE_BROADCAST",
+    summary: `Admin broadcast notice: "${title}"`,
+    actorUsername: "admin-tool"
+  });
+
+  res.json({ ok: true });
 };
 
 export const getOverview = async (_req: Request, res: Response): Promise<void> => {
@@ -166,7 +188,7 @@ export const deleteUserAccountAsAdmin = async (req: Request, res: Response): Pro
   }
 
   if (user.username === SYSTEM_USERNAME) {
-    res.status(400).json({ message: "The Discrope system user cannot be deleted" });
+    res.status(400).json({ message: "The DiskChat system user cannot be deleted" });
     return;
   }
 

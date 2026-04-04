@@ -26,7 +26,7 @@ const buildUpload = (subdir) => {
     });
     return (0, multer_1.default)({
         storage,
-        limits: { fileSize: 100 * 1024 * 1024 }
+        limits: { fileSize: 50 * 1024 * 1024 }
     });
 };
 exports.uploadAvatar = buildUpload("avatars");

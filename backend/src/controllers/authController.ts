@@ -74,7 +74,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await prismaAny.user.create({
     data: { username: normalizedUsername, nickname: normalizedNickname || normalizedUsername, passwordHash },
-    select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true }
+    select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, bannerImageUrl: true, status: true, aboutMe: true, customStatus: true, bannerColor: true, accentColor: true, createdAt: true }
   });
   const recoveryCode = await issueRecoveryCode(user.id);
 
@@ -116,9 +116,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       nickname: user.nickname,
       isDeleted: user.isDeleted,
       avatarUrl: user.avatarUrl,
+      bannerImageUrl: user.bannerImageUrl,
       status: user.status,
       aboutMe: user.aboutMe,
       customStatus: user.customStatus,
+      bannerColor: user.bannerColor,
+      accentColor: user.accentColor,
       createdAt: user.createdAt
     }
   });
@@ -180,7 +183,7 @@ export const me = async (req: Request, res: Response): Promise<void> => {
 
   const user = await prismaAny.user.findUnique({
     where: { id: userId },
-    select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true }
+    select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, bannerImageUrl: true, status: true, aboutMe: true, customStatus: true, bannerColor: true, accentColor: true, createdAt: true }
   });
 
   if (!user) {

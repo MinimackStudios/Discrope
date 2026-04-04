@@ -9,7 +9,11 @@ export type User = {
   status: UserStatus;
   aboutMe?: string;
   customStatus?: string;
+  bannerColor?: string | null;
+  bannerImageUrl?: string | null;
+  accentColor?: string | null;
   createdAt?: string;
+  friendsSince?: string | null;
 };
 
 export type ChannelType = "TEXT";
@@ -25,6 +29,8 @@ export type Channel = {
   id: string;
   name: string;
   type: ChannelType;
+  readOnly?: boolean;
+  order?: number;
   categoryId?: string | null;
   serverId: string;
 };
@@ -54,6 +60,8 @@ export type Message = {
   replyTo?: {
     id: string;
     content: string;
+    attachmentUrl?: string | null;
+    attachmentName?: string | null;
     author: { id: string; username: string; nickname?: string; isDeleted?: boolean; avatarUrl?: string | null };
   } | null;
   author: User;
@@ -64,6 +72,7 @@ export type ServerMember = {
   userId: string;
   serverId: string;
   nickname?: string | null;
+  nickColor?: string | null;
   role: "MEMBER" | "ADMIN";
   createdAt?: string;
   user: User;
@@ -97,9 +106,12 @@ export type DMMessage = {
   replyTo?: {
     id: string;
     content: string;
+    attachmentUrl?: string | null;
+    attachmentName?: string | null;
     author: { id: string; username: string; nickname?: string; isDeleted?: boolean; avatarUrl?: string | null };
   } | null;
   author: User;
+  reactions: MessageReaction[];
 };
 
 export type LinkEmbed = {

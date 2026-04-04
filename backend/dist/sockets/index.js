@@ -60,7 +60,7 @@ const initSocket = (server) => {
             prisma_1.prisma.user
                 .findUnique({
                 where: { id: payload.id },
-                select: { id: true, username: true, nickname: true }
+                select: { id: true, username: true, nickname: true, status: true }
             })
                 .then((user) => {
                 if (!user) {
@@ -70,7 +70,8 @@ const initSocket = (server) => {
                 socket.data.user = {
                     id: user.id,
                     username: user.username,
-                    nickname: user.nickname?.trim() || user.username
+                    nickname: user.nickname?.trim() || user.username,
+                    status: user.status
                 };
                 next();
             })
@@ -83,16 +84,16 @@ const initSocket = (server) => {
     });
     io.on("connection", (socket) => {
         const user = socket.data.user;
+        const effectiveConnectedStatus = user.status === "OFFLINE" ? "ONLINE" : user.status;
         const userSockets = onlineUsers.get(user.id) ?? new Set();
         const wasOffline = userSockets.size === 0;
         userSockets.add(socket.id);
         onlineUsers.set(user.id, userSockets);
         socket.join(`user:${user.id}`);
         if (wasOffline) {
-            io.emit("presence:update", { userId: user.id, status: "ONLINE" });
-            void prisma_1.prisma.user.update({ where: { id: user.id }, data: { status: "ONLINE" } }).catch(() => undefined);
+            io.emit("presence:update", { userId: user.id, status: effectiveConnectedStatus });
         }
-        socket.emit("presence:sync", { onlineUserIds: Array.from(onlineUsers.keys()) });
+        io.emit("presence:sync", { onlineUserIds: Array.from(onlineUsers.keys()) });
         socket.on("channel:join", (channelId) => {
             socket.join(`channel:${channelId}`);
         });
@@ -136,7 +137,7 @@ const initSocket = (server) => {
                 if (userSocketsOnDisconnect.size === 0) {
                     onlineUsers.delete(user.id);
                     io.emit("presence:update", { userId: user.id, status: "OFFLINE" });
-                    void prisma_1.prisma.user.update({ where: { id: user.id }, data: { status: "OFFLINE" } }).catch(() => undefined);
+                    io.emit("presence:sync", { onlineUserIds: Array.from(onlineUsers.keys()) });
                 }
             }
         });

@@ -68,6 +68,8 @@ const messageDetailsInclude = {
         select: {
             id: true,
             content: true,
+            attachmentUrl: true,
+            attachmentName: true,
             author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
         }
     }
@@ -129,14 +131,26 @@ const createChannel = async (req, res) => {
     res.status(201).json({ channel });
 };
 exports.createChannel = createChannel;
+const MESSAGE_PAGE_SIZE = 50;
 const listMessages = async (req, res) => {
     const { channelId } = req.params;
+    const before = typeof req.query.before === "string" ? req.query.before : undefined;
     const messages = await prisma_1.prisma.message.findMany({
-        where: { channelId },
+        where: {
+            channelId,
+            ...(before ? { createdAt: { lt: (await prisma_1.prisma.message.findUnique({ where: { id: before }, select: { createdAt: true } }))?.createdAt } } : {})
+        },
         include: messageDetailsInclude,
-        orderBy: { createdAt: "asc" }
+        orderBy: { createdAt: "desc" },
+        take: MESSAGE_PAGE_SIZE
     });
-    res.json({ messages });
+    // Reverse to ascending order for the client
+    const ordered = messages.reverse();
+    // Determine whether older messages exist
+    const hasOlder = ordered.length > 0
+        ? (await prisma_1.prisma.message.count({ where: { channelId, createdAt: { lt: ordered[0].createdAt } } })) > 0
+        : false;
+    res.json({ messages: ordered, hasOlder });
 };
 exports.listMessages = listMessages;
 const createMessage = async (req, res) => {

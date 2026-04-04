@@ -10,7 +10,7 @@ const ensureDir = (dirPath: string): void => {
   }
 };
 
-const buildUpload = (subdir: "avatars" | "server-icons" | "attachments"): multer.Multer => {
+const buildUpload = (subdir: "avatars" | "server-icons" | "attachments" | "banners"): multer.Multer => {
   const destinationDir = path.join(uploadDir, subdir);
   ensureDir(destinationDir);
 
@@ -24,10 +24,32 @@ const buildUpload = (subdir: "avatars" | "server-icons" | "attachments"): multer
 
   return multer({
     storage,
-    limits: { fileSize: 100 * 1024 * 1024 }
+    limits: { fileSize: 50 * 1024 * 1024 }
   });
 };
 
 export const uploadAvatar = buildUpload("avatars");
 export const uploadServerIcon = buildUpload("server-icons");
 export const uploadAttachment = buildUpload("attachments");
+export const uploadBannerImage = buildUpload("banners");
+
+// Combined handler for PATCH /users/me — handles both avatar and bannerImage fields
+const bannersDir = path.join(uploadDir, "banners");
+const avatarsDir = path.join(uploadDir, "avatars");
+ensureDir(bannersDir);
+ensureDir(avatarsDir);
+
+const userProfileStorage = multer.diskStorage({
+  destination: (_req, file, cb) => {
+    cb(null, file.fieldname === "bannerImage" ? bannersDir : avatarsDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${uuid()}${ext}`);
+  }
+});
+
+export const uploadUserProfile = multer({
+  storage: userProfileStorage,
+  limits: { fileSize: 50 * 1024 * 1024 }
+}).fields([{ name: "avatar", maxCount: 1 }, { name: "bannerImage", maxCount: 1 }]);

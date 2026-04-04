@@ -1,9 +1,23 @@
 import type { DMChannel, User } from "../types";
-import { resolveMediaUrl } from "../lib/media";
+import { resolveUserAvatarUrl } from "../lib/media";
 import StatusDot from "./StatusDot";
 import { X } from "lucide-react";
 
-const DEFAULT_AVATAR_URL = `${import.meta.env.BASE_URL}default-avatar.svg`;
+const formatPresenceLabel = (status: User["status"] | undefined): string => {
+  switch (status) {
+    case "ONLINE":
+      return "Online";
+    case "IDLE":
+      return "Idle";
+    case "DND":
+      return "Do Not Disturb";
+    case "INVISIBLE":
+      return "Invisible";
+    case "OFFLINE":
+    default:
+      return "Offline";
+  }
+};
 
 type Props = {
   dms: DMChannel[];
@@ -29,6 +43,7 @@ const DMList = ({ dms, me, activeDMId, onOpenDM, onRemoveDM, unreadDMs, fullHeig
               .filter((p) => p.id !== me?.id)
               .map((p) => p.nickname?.trim() || p.username)
               .join(", ");
+            const statusText = other?.customStatus?.trim() || formatPresenceLabel(other?.status);
             const unread = unreadDMs[dm.id] ?? 0;
             return (
               <button
@@ -42,7 +57,7 @@ const DMList = ({ dms, me, activeDMId, onOpenDM, onRemoveDM, unreadDMs, fullHeig
               >
                 <div className="relative h-8 w-8 shrink-0">
                   <img
-                    src={resolveMediaUrl(other?.avatarUrl) || DEFAULT_AVATAR_URL}
+                    src={resolveUserAvatarUrl(other)}
                     alt={display || "DM"}
                     className="h-8 w-8 rounded-full object-cover"
                   />
@@ -52,7 +67,10 @@ const DMList = ({ dms, me, activeDMId, onOpenDM, onRemoveDM, unreadDMs, fullHeig
                     </span>
                   ) : null}
                 </div>
-                <span className="flex-1 truncate text-left">{display || "Unnamed DM"}</span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block truncate">{display || "Unnamed DM"}</span>
+                  <span className="block truncate text-xs text-discord-muted">{statusText}</span>
+                </span>
                 {unread > 0 ? (
                   <span className="shrink-0 rounded-full bg-[#ed4245] px-1.5 text-[10px] font-semibold text-white">
                     {unread}

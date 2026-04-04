@@ -11,7 +11,7 @@ import {
   updateSelf
 } from "../controllers/userController";
 import { authMiddleware } from "../middleware/auth";
-import { uploadAvatar } from "../middleware/upload";
+import { uploadUserProfile } from "../middleware/upload";
 import { validateRequest } from "../middleware/validate";
 
 const router = Router();
@@ -25,6 +25,6 @@ router.post("/friends/accept/:requestId", acceptFriendRequest);
 router.post("/friends/reject/:requestId", rejectFriendRequest);
 router.delete("/friends/:friendId", removeFriend);
 router.delete("/me", deleteSelf);
-router.patch("/me", uploadAvatar.single("avatar"), updateSelf);
+router.patch("/me", uploadUserProfile, updateSelf);
 
 export default router;

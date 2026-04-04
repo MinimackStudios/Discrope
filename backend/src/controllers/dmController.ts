@@ -4,7 +4,33 @@ import path from "node:path";
 import { prisma } from "../lib/prisma";
 
 const prismaAny = prisma as any;
-const SYSTEM_USERNAME = "Discrope";
+const SYSTEM_USERNAME = "DiskChat";
+
+const dmMessageDetailsInclude = {
+  author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+  reactions: {
+    orderBy: { createdAt: "asc" },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          nickname: true,
+          avatarUrl: true
+        }
+      }
+    }
+  },
+  replyTo: {
+    select: {
+      id: true,
+      content: true,
+      attachmentUrl: true,
+      attachmentName: true,
+      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
+    }
+  }
+} as const;
 
 const deleteAttachmentIfLocal = (attachmentUrl?: string | null): void => {
   if (!attachmentUrl || !attachmentUrl.startsWith("/uploads/")) {
@@ -22,7 +48,7 @@ export const listDMs = async (req: Request, res: Response): Promise<void> => {
   const channels = await prismaAny.dMChannel.findMany({
     where: { participants: { some: { id: userId } } },
     include: {
-      participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } }
+      participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } }
     }
   });
 
@@ -51,7 +77,7 @@ export const createOrGetDM = async (req: Request, res: Response): Promise<void> 
     where: {
       AND: ids.map((id) => ({ participants: { some: { id } } }))
     },
-    include: { participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
+    include: { participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
   });
 
   if (existing && existing.participants.length === ids.length) {
@@ -63,15 +89,18 @@ export const createOrGetDM = async (req: Request, res: Response): Promise<void> 
     data: {
       participants: { connect: ids.map((id) => ({ id })) }
     },
-    include: { participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
+    include: { participants: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
   });
 
   res.status(201).json({ channel });
 };
 
+const DM_MESSAGE_PAGE_SIZE = 50;
+
 export const listDMMessages = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.id;
   const { dmChannelId } = req.params;
+  const before = typeof req.query.before === "string" ? req.query.before : undefined;
 
   const channel = await prismaAny.dMChannel.findFirst({
     where: { id: dmChannelId, participants: { some: { id: userId } } },
@@ -82,22 +111,27 @@ export const listDMMessages = async (req: Request, res: Response): Promise<void>
     return;
   }
 
+  const beforeDate = before
+    ? ((await prismaAny.dMMessage.findUnique({ where: { id: before }, select: { createdAt: true } }))?.createdAt as Date | undefined)
+    : undefined;
+
   const messages = await prismaAny.dMMessage.findMany({
-    where: { dmChannelId },
-    include: {
-      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-      replyTo: {
-        select: {
-          id: true,
-          content: true,
-          author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
-        }
-      }
+    where: {
+      dmChannelId,
+      ...(beforeDate ? { createdAt: { lt: beforeDate } } : {})
     },
-    orderBy: { createdAt: "asc" }
+    include: dmMessageDetailsInclude,
+    orderBy: { createdAt: "desc" },
+    take: DM_MESSAGE_PAGE_SIZE
   });
 
-  res.json({ messages });
+  const ordered = (messages as Array<{ createdAt: Date }>).reverse();
+
+  const hasOlder = ordered.length > 0
+    ? (await prismaAny.dMMessage.count({ where: { dmChannelId, createdAt: { lt: (ordered[0] as { createdAt: Date }).createdAt } } })) > 0
+    : false;
+
+  res.json({ messages: ordered, hasOlder });
 };
 
 export const createDMMessage = async (req: Request, res: Response): Promise<void> => {
@@ -134,16 +168,7 @@ export const createDMMessage = async (req: Request, res: Response): Promise<void
 
   const message = await prismaAny.dMMessage.create({
     data: { dmChannelId, authorId: userId, content: content ?? "", attachmentUrl, attachmentName, replyToId: replyToId ?? null },
-    include: {
-      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-      replyTo: {
-        select: {
-          id: true,
-          content: true,
-          author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
-        }
-      }
-    }
+    include: dmMessageDetailsInclude
   });
 
   const io = req.app.get("io");
@@ -171,16 +196,7 @@ export const editDMMessage = async (req: Request, res: Response): Promise<void> 
   const message = await prismaAny.dMMessage.update({
     where: { id: messageId },
     data: { content, editedAt: new Date() },
-    include: {
-      author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-      replyTo: {
-        select: {
-          id: true,
-          content: true,
-          author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
-        }
-      }
-    }
+    include: dmMessageDetailsInclude
   });
 
   const io = req.app.get("io");
@@ -208,4 +224,57 @@ export const deleteDMMessage = async (req: Request, res: Response): Promise<void
   const io = req.app.get("io");
   io.to(`dm:${dmChannelId}`).emit("dm:message:deleted", { id: messageId, dmChannelId });
   res.json({ deleted: true });
+};
+
+export const toggleDMReaction = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const { dmChannelId, messageId } = req.params;
+  const { emoji } = req.body as { emoji: string };
+
+  const message = await prismaAny.dMMessage.findFirst({
+    where: {
+      id: messageId,
+      dmChannelId,
+      dmChannel: {
+        participants: {
+          some: { id: userId }
+        }
+      }
+    },
+    select: { id: true, dmChannelId: true }
+  });
+
+  if (!message) {
+    res.status(404).json({ message: "Message not found" });
+    return;
+  }
+
+  const existing = await prismaAny.dMMessageReaction.findUnique({
+    where: { dmMessageId_userId_emoji: { dmMessageId: messageId, userId, emoji } }
+  });
+
+  if (existing) {
+    await prismaAny.dMMessageReaction.delete({ where: { dmMessageId_userId_emoji: { dmMessageId: messageId, userId, emoji } } });
+  } else {
+    // Enforce 20-unique-emoji limit
+    const uniqueEmojis = await prismaAny.dMMessageReaction.findMany({
+      where: { dmMessageId: messageId },
+      select: { emoji: true },
+      distinct: ["emoji"]
+    });
+    if (uniqueEmojis.length >= 20 && !uniqueEmojis.some((r: { emoji: string }) => r.emoji === emoji)) {
+      res.status(400).json({ message: "Reactions are limited to 20 unique emojis per message" });
+      return;
+    }
+    await prismaAny.dMMessageReaction.create({ data: { dmMessageId: messageId, userId, emoji } });
+  }
+
+  const updatedMessage = await prismaAny.dMMessage.findUnique({
+    where: { id: messageId },
+    include: dmMessageDetailsInclude
+  });
+
+  const io = req.app.get("io");
+  io.to(`dm:${dmChannelId}`).emit("dm:message:updated", updatedMessage);
+  res.json({ message: updatedMessage });
 };

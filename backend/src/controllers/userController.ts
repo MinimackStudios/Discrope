@@ -7,7 +7,7 @@ import { logAdminEvent } from "../lib/adminAudit";
 const prismaAny = prisma as any;
 const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const DELETED_USERNAME = "deleteduser";
-const SYSTEM_USERNAME = "Discrope";
+const SYSTEM_USERNAME = "DiskChat";
 
 const toLocalUploadPath = (url?: string | null): string | null => {
   if (!url || !url.startsWith("/uploads/")) {
@@ -71,10 +71,19 @@ export const updateSelf = async (req: Request, res: Response): Promise<void> => 
     status?: "ONLINE" | "IDLE" | "DND" | "INVISIBLE";
     aboutMe?: string;
     customStatus?: string;
+    bannerColor?: string;
     removeAvatar?: string;
+    removeBannerImage?: string;
   };
-  const avatarUrl = req.file ? `/uploads/avatars/${req.file.filename}` : undefined;
+
+  const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+  const avatarFile = files?.["avatar"]?.[0];
+  const bannerImageFile = files?.["bannerImage"]?.[0];
+
+  const avatarUrl = avatarFile ? `/uploads/avatars/${avatarFile.filename}` : undefined;
+  const bannerImageUrl = bannerImageFile ? `/uploads/banners/${bannerImageFile.filename}` : undefined;
   const shouldRemoveAvatar = removeAvatar === "true";
+  const shouldRemoveBannerImage = req.body.removeBannerImage === "true";
   const normalizedUsername = typeof username === "string" ? username.trim() : undefined;
   if (normalizedUsername && !USERNAME_REGEX.test(normalizedUsername)) {
     res.status(400).json({ message: "Username must be 2-32 lowercase letters and numbers only" });
@@ -87,10 +96,11 @@ export const updateSelf = async (req: Request, res: Response): Promise<void> => 
 
   const existingUser = await prismaAny.user.findUnique({
     where: { id: userId },
-    select: { avatarUrl: true }
+    select: { avatarUrl: true, bannerImageUrl: true }
   });
 
   const nextAvatarUrl = avatarUrl ?? (shouldRemoveAvatar ? null : undefined);
+  const nextBannerImageUrl = bannerImageUrl ?? (shouldRemoveBannerImage ? null : undefined);
 
   const user = await prismaAny.user.update({
     where: { id: userId },
@@ -100,13 +110,19 @@ export const updateSelf = async (req: Request, res: Response): Promise<void> => 
       ...(status ? { status } : {}),
       ...(typeof req.body.aboutMe === "string" ? { aboutMe: req.body.aboutMe } : {}),
       ...(typeof req.body.customStatus === "string" ? { customStatus: req.body.customStatus } : {}),
-      ...(nextAvatarUrl !== undefined ? { avatarUrl: nextAvatarUrl } : {})
+      ...(typeof req.body.bannerColor === "string" ? { bannerColor: req.body.bannerColor || null } : {}),
+      ...(typeof req.body.accentColor === "string" ? { accentColor: req.body.accentColor || null } : {}),
+      ...(nextAvatarUrl !== undefined ? { avatarUrl: nextAvatarUrl } : {}),
+      ...(nextBannerImageUrl !== undefined ? { bannerImageUrl: nextBannerImageUrl } : {})
     },
-    select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true }
+    select: { id: true, username: true, nickname: true, avatarUrl: true, bannerImageUrl: true, status: true, aboutMe: true, customStatus: true, bannerColor: true, accentColor: true, createdAt: true }
   });
 
   if (existingUser?.avatarUrl && existingUser.avatarUrl !== user.avatarUrl) {
     deleteLocalFileIfExists(existingUser.avatarUrl);
+  }
+  if (existingUser?.bannerImageUrl && existingUser.bannerImageUrl !== user.bannerImageUrl) {
+    deleteLocalFileIfExists(existingUser.bannerImageUrl);
   }
 
   const io = req.app.get("io");
@@ -115,9 +131,12 @@ export const updateSelf = async (req: Request, res: Response): Promise<void> => 
     username: user.username,
     nickname: user.nickname,
     avatarUrl: user.avatarUrl,
+    bannerImageUrl: user.bannerImageUrl,
     status: user.status,
     aboutMe: user.aboutMe,
-    customStatus: user.customStatus
+    customStatus: user.customStatus,
+    bannerColor: user.bannerColor,
+    accentColor: user.accentColor
   });
 
   res.json({ user });
@@ -132,21 +151,21 @@ export const listFriends = async (req: Request, res: Response): Promise<void> =>
       OR: [{ fromId: userId }, { toId: userId }]
     },
     include: {
-      from: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-      to: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } }
+      from: { select: { id: true, username: true, nickname: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+      to: { select: { id: true, username: true, nickname: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } }
     }
   });
 
-  const friends = (accepted as any[]).map((f) => (f.fromId === userId ? f.to : f.from));
+  const friends = (accepted as any[]).map((f) => ({ ...(f.fromId === userId ? f.to : f.from), friendsSince: f.createdAt }));
 
   const pending = await prismaAny.friendRequest.findMany({
     where: { toId: userId, status: "PENDING" },
-    include: { from: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
+    include: { from: { select: { id: true, username: true, nickname: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
   });
 
   const pendingOutgoing = await prismaAny.friendRequest.findMany({
     where: { fromId: userId, status: "PENDING" },
-    include: { to: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
+    include: { to: { select: { id: true, username: true, nickname: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
   });
 
   res.json({
