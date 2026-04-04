@@ -11,6 +11,7 @@ const HIDDEN_DMS_STORAGE_KEY = "windcord_hidden_dms_v1";
 const LAST_CHANNEL_BY_SERVER_STORAGE_KEY = "windcord_last_channel_by_server_v1";
 const NOTIF_SOUND_STORAGE_KEY = "windcord_notif_sound_v1";
 const UNREAD_DMS_STORAGE_KEY = "windcord_unread_dms_v1";
+const LAST_UNREAD_MSG_STORAGE_KEY = "windcord_last_unread_msg_v1";
 const NOTIFICATION_SOUND_DEFAULT_URL = `${import.meta.env.BASE_URL}notif.mp3`;
 const NOTIFICATION_SOUND_ALT_URL = `${import.meta.env.BASE_URL}notifalt.mp3`;
 
@@ -31,6 +32,39 @@ export const setNotifSoundPref = (pref: "default" | "alt"): void => {
 };
 
 let notificationAudio: HTMLAudioElement | null = null;
+let audioUnlocked = false;
+let pendingNotificationPlay = false;
+
+const doPlayAudio = (): void => {
+  const currentUser = useAuthStore.getState().user;
+  if (!currentUser || currentUser.status === "DND") {
+    return;
+  }
+  const url = getNotifSoundPref() === "alt" ? NOTIFICATION_SOUND_ALT_URL : NOTIFICATION_SOUND_DEFAULT_URL;
+  if (!notificationAudio || !notificationAudio.src.endsWith(new URL(url, location.href).pathname)) {
+    notificationAudio = new Audio(url);
+    notificationAudio.preload = "auto";
+  }
+  notificationAudio.currentTime = 0;
+  void notificationAudio.play().catch(() => undefined);
+};
+
+const onFirstUserInteraction = (): void => {
+  if (audioUnlocked) {
+    return;
+  }
+  audioUnlocked = true;
+  if (pendingNotificationPlay) {
+    pendingNotificationPlay = false;
+    doPlayAudio();
+  }
+};
+
+if (typeof document !== "undefined") {
+  document.addEventListener("click", onFirstUserInteraction, { capture: true });
+  document.addEventListener("keydown", onFirstUserInteraction, { capture: true });
+  document.addEventListener("touchstart", onFirstUserInteraction, { capture: true });
+}
 const processedSocketEventKeys: string[] = [];
 const processedSocketEventSet = new Set<string>();
 const MAX_PROCESSED_SOCKET_EVENTS = 500;
@@ -86,6 +120,28 @@ const persistUnreadDMs = (unreadDMs: Record<string, number>): void => {
     return;
   }
   window.localStorage.setItem(UNREAD_DMS_STORAGE_KEY, JSON.stringify(unreadDMs));
+};
+
+const loadPersistedLastUnreadMessageIds = (): Record<string, string> => {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(LAST_UNREAD_MSG_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return {};
+  }
+};
+
+const persistLastUnreadMessageIds = (ids: Record<string, string>): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(LAST_UNREAD_MSG_STORAGE_KEY, JSON.stringify(ids));
 };
 
 const persistUnreads = (unreadByChannel: Record<string, number>, mentionUnreadByChannel: Record<string, number>): void => {
@@ -184,20 +240,29 @@ const playUnreadNotification = (): void => {
   if (typeof window === "undefined") {
     return;
   }
-
   const currentUser = useAuthStore.getState().user;
   if (!currentUser || currentUser.status === "DND") {
     return;
   }
-
+  if (audioUnlocked) {
+    doPlayAudio();
+    return;
+  }
+  // Always attempt immediate playback — some browsers allow it (e.g. user ran the
+  // page before, or has a media-autoplay permission). If the browser rejects it,
+  // fall back to playing on the next user interaction.
   const url = getNotifSoundPref() === "alt" ? NOTIFICATION_SOUND_ALT_URL : NOTIFICATION_SOUND_DEFAULT_URL;
-  if (!notificationAudio || (!notificationAudio.src.endsWith(new URL(url, location.href).pathname))) {
+  if (!notificationAudio || !notificationAudio.src.endsWith(new URL(url, location.href).pathname)) {
     notificationAudio = new Audio(url);
     notificationAudio.preload = "auto";
   }
-
   notificationAudio.currentTime = 0;
-  void notificationAudio.play().catch(() => undefined);
+  notificationAudio.play().then(() => {
+    audioUnlocked = true;
+    pendingNotificationPlay = false;
+  }).catch(() => {
+    pendingNotificationPlay = true;
+  });
 };
 
 const isAppFocused = (): boolean => {
@@ -271,6 +336,7 @@ const persistedUnreads = loadPersistedUnreads();
 const persistedView = loadPersistedView();
 const persistedHiddenDMs = loadHiddenDMs();
 const persistedUnreadDMs = loadPersistedUnreadDMs();
+const persistedLastUnreadMessageIds = loadPersistedLastUnreadMessageIds();
 const persistedLastChannelByServer = loadLastChannelByServer();
 
 type ChatState = {
@@ -360,7 +426,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   unreadDMs: persistedUnreadDMs,
   hiddenDMIds: persistedHiddenDMs,
   lastChannelByServer: persistedLastChannelByServer,
-  lastUnreadMessageIdByChannel: {},
+  lastUnreadMessageIdByChannel: persistedLastUnreadMessageIds,
   channelOpenFocusMessageId: null,
   dmChannelOpenFocusMessageId: null,
   hasOlderMessages: false,
@@ -561,6 +627,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const nextUnreadMessageIds = { ...get().lastUnreadMessageIdByChannel };
     delete nextUnreadMessageIds[channelId];
     persistUnreads(nextUnread, nextMentionUnread);
+    persistLastUnreadMessageIds(nextUnreadMessageIds);
     set({
       messages: data.messages,
       hasOlderMessages: data.hasOlder === true,
@@ -924,10 +991,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ...state.mentionUnreadByChannel,
             [message.channelId]: isMention ? (state.mentionUnreadByChannel[message.channelId] ?? 0) + 1 : (state.mentionUnreadByChannel[message.channelId] ?? 0)
           },
-          lastUnreadMessageIdByChannel: {
-            ...state.lastUnreadMessageIdByChannel,
-            [message.channelId]: state.lastUnreadMessageIdByChannel[message.channelId] ?? message.id
-          }
+          lastUnreadMessageIdByChannel: (() => {
+            const next = {
+              ...state.lastUnreadMessageIdByChannel,
+              [message.channelId]: state.lastUnreadMessageIdByChannel[message.channelId] ?? message.id
+            };
+            persistLastUnreadMessageIds(next);
+            return next;
+          })()
         }));
       }
     });
