@@ -174,7 +174,7 @@ const ServerSettingsModal = ({ open, server, isOwner, onClose, onRefresh, onRege
                   onClick={async () => {
                     const code = await onRegenerateInvite(inviteCode);
                     if (code) {
-                      const link = `${window.location.origin}/Windcord/invite/${code}`;
+                      const link = `${window.location.origin}/invite/${code}`;
                       await navigator.clipboard.writeText(link);
                     }
                   }}

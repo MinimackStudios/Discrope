@@ -39,7 +39,7 @@ jobs:
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://example.com/api' }}
           VITE_SOCKET_URL: ${{ vars.VITE_SOCKET_URL || 'https://example.com' }}
-          VITE_BASE_PATH: /Windcord/
+          VITE_BASE_PATH: /
 
       - name: SPA fallback (404.html)
         run: cp dist/index.html dist/404.html
