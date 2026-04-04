@@ -48,13 +48,13 @@ const doPlayAudio = (): void => {
     notificationAudio.preload = "auto";
   }
   notificationAudio.currentTime = 0;
-  void notificationAudio.play().catch(() => undefined);
+  notificationAudio.play().catch(() => {
+    // Play failed silently (e.g. audio not yet decoded). Queue for next interaction.
+    pendingNotificationPlay = true;
+  });
 };
 
 const onFirstUserInteraction = (): void => {
-  if (audioUnlocked) {
-    return;
-  }
   audioUnlocked = true;
   if (pendingNotificationPlay) {
     pendingNotificationPlay = false;
@@ -66,6 +66,9 @@ if (typeof document !== "undefined") {
   document.addEventListener("click", onFirstUserInteraction, { capture: true });
   document.addEventListener("keydown", onFirstUserInteraction, { capture: true });
   document.addEventListener("touchstart", onFirstUserInteraction, { capture: true });
+  // Window focus fires when the user switches back to the tab. Some browsers
+  // treat this as a sufficient user gesture to unblock autoplay.
+  window.addEventListener("focus", onFirstUserInteraction);
 }
 
 let tabHiddenAt: number | null = null;
@@ -532,7 +535,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
-    if (targetChannel) {
+    // Only load messages when the user is actually in server mode.
+    // If they're in DM mode, calling loadMessages would clear the unread
+    // badge and last-seen pointer for the server channel without the user
+    // having seen those messages.
+    if (targetChannel && currentMode !== "DM") {
       await get().loadMessages(targetChannel.id);
     }
   },
@@ -1138,9 +1145,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const isReconnect = get().servers.length > 0;
       if (isReconnect) {
         const activeChannelId = get().activeChannelId;
-        if (activeChannelId) {
+        const currentMode = get().mode;
+        // Only reload channel messages when the user is actually viewing the
+        // server. In DM mode activeChannelId still points at the last visited
+        // server channel (needed for room joins above), so calling loadMessages
+        // here would clear the unread badge and advance lastSeenByChannel even
+        // though the user hasn't seen those messages.
+        if (currentMode === "SERVER" && activeChannelId) {
           void get().loadMessages(activeChannelId);
-        } else if (activeDMId && get().mode === "DM") {
+        } else if (activeDMId && currentMode === "DM") {
           void get().loadDMMessages(activeDMId);
         }
         void get().refreshOfflineUnreads();
@@ -1161,14 +1174,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       const active = get().activeChannelId;
-      const isViewingChannel = message.channelId === active;
+      const isViewingChannel = get().mode === "SERVER" && message.channelId === active;
       const shouldMarkUnread = !isViewingChannel || !isAppFocused();
       const isSelfAuthored = Boolean(currentUser?.id && message.authorId === currentUser.id);
 
       if (isViewingChannel) {
-        set((state) => ({
-          messages: state.messages.some((m) => m.id === message.id) ? state.messages : [...state.messages, message]
-        }));
+        set((state) => {
+          if (state.messages.some((m) => m.id === message.id)) {
+            return { messages: state.messages };
+          }
+          // Replace a matching pending message so we don't briefly show both
+          // the muted optimistic message and the confirmed one simultaneously.
+          if (isSelfAuthored) {
+            const pendingIdx = state.messages.findIndex(
+              (m) => m.pending && m.authorId === message.authorId && m.content === message.content
+            );
+            if (pendingIdx !== -1) {
+              const next = [...state.messages];
+              next[pendingIdx] = message;
+              return { messages: next };
+            }
+          }
+          return { messages: [...state.messages, message] };
+        });
         // Keep last-seen in sync so a refresh doesn't create a false "New Messages" divider
         persistLastSeenByChannel({ ...loadLastSeenByChannel(), [message.channelId]: message.id });
       }
@@ -1409,9 +1437,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (currentUser?.id && message.authorId === currentUser.id) {
         if (isViewingDM) {
-          set((state) => ({
-            dmMessages: state.dmMessages.some((m) => m.id === message.id) ? state.dmMessages : [...state.dmMessages, message]
-          }));
+          set((state) => {
+            if (state.dmMessages.some((m) => m.id === message.id)) {
+              return { dmMessages: state.dmMessages };
+            }
+            // Replace matching pending message to avoid the brief duplicate flash.
+            const pendingIdx = state.dmMessages.findIndex(
+              (m) => m.pending && m.authorId === message.authorId && m.content === message.content
+            );
+            if (pendingIdx !== -1) {
+              const next = [...state.dmMessages];
+              next[pendingIdx] = message;
+              return { dmMessages: next };
+            }
+            return { dmMessages: [...state.dmMessages, message] };
+          });
           persistLastSeenByDM({ ...loadLastSeenByDM(), [message.dmChannelId]: message.id });
         }
         return;

@@ -12,7 +12,7 @@ import { getSocket } from "../lib/socket";
 import DiscordEmojiPicker from "./DiscordEmojiPicker";
 import OpenGraphEmbed from "./OpenGraphEmbed";
 import StatusDot from "./StatusDot";
-import type { DMMessage, Message, ServerMember, User } from "../types";
+import type { Channel, DMMessage, Message, ServerMember, User } from "../types";
 
 type ChatMessage = Message | DMMessage;
 
@@ -24,7 +24,9 @@ type Props = {
   focusMessageId?: string | null;
   typingUsers: string[];
   mentionMembers?: ServerMember[];
+  channels?: Channel[];
   onOpenProfile: (user: User) => void;
+  onChannelClick?: (channelId: string) => void;
   canModerateServerMessages: boolean;
   channelReadOnly?: boolean;
   onKickMember?: (memberId: string) => void;
@@ -970,6 +972,8 @@ const ChatArea = ({
   focusMessageId,
   typingUsers,
   mentionMembers = [],
+  channels = [],
+  onChannelClick,
   onOpenProfile,
   canModerateServerMessages,
   channelReadOnly = false,
@@ -1023,6 +1027,7 @@ const ChatArea = ({
   const [memberContextMenu, setMemberContextMenu] = useState<MemberContextMenu | null>(null);
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
   const [highlightedEmojiIndex, setHighlightedEmojiIndex] = useState(0);
+  const [highlightedChannelIndex, setHighlightedChannelIndex] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<{ src: string; name: string } | null>(null);
   const [imageZoom, setImageZoom] = useState(1);
@@ -1189,7 +1194,15 @@ const ChatArea = ({
     return content.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
   }, [content, mode]);
 
+  const channelToken = useMemo(() => {
+    if (mode !== "SERVER") {
+      return null;
+    }
+    return content.match(/(?:^|\s)#([a-zA-Z0-9_\-]*)$/);
+  }, [content, mode]);
+
   const mentionQuery = mentionToken ? mentionToken[1].toLowerCase() : null;
+  const channelQuery = channelToken ? (channelToken[1] ?? "").toLowerCase() : null;
   const emojiSourceText = editingId ? editingDraft : content;
   const emojiToken = useMemo(() => emojiSourceText.match(/(?:^|\s):([a-zA-Z0-9_+-]{1,32})$/), [emojiSourceText]);
   const emojiQuery = emojiToken?.[1]?.toLowerCase() ?? null;
@@ -1255,8 +1268,25 @@ const ChatArea = ({
   }, [emojiQuery]);
 
   const mentionMenuOpen = mode === "SERVER" && Boolean(mentionToken) && mentionCandidates.length > 0;
+  const channelCandidates = useMemo(() => {
+    if (mode !== "SERVER" || !channelToken) {
+      return [] as Channel[];
+    }
+    const query = channelQuery ?? "";
+    const textChannels = channels.filter((c) => c.type === "TEXT");
+    const filtered = textChannels.filter((c) => c.name.toLowerCase().includes(query));
+    return filtered
+      .sort((a, b) => {
+        const aStarts = a.name.toLowerCase().startsWith(query);
+        const bStarts = b.name.toLowerCase().startsWith(query);
+        if (aStarts !== bStarts) return aStarts ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 8);
+  }, [channels, channelQuery, channelToken, mode]);
+  const channelMenuOpen = mode === "SERVER" && Boolean(channelToken) && channelCandidates.length > 0;
   const emojiMenuOpen = Boolean(emojiToken) && emojiCandidates.length > 0;
-  const overlayMenuOpen = showPicker || reactionPickerFor !== null || mentionMenuOpen || emojiMenuOpen;
+  const overlayMenuOpen = showPicker || reactionPickerFor !== null || mentionMenuOpen || emojiMenuOpen || channelMenuOpen;
 
   const membersByUsername = useMemo(() => {
     const map = new Map<string, ServerMember>();
@@ -1293,6 +1323,16 @@ const ChatArea = ({
     return map;
   }, [mentionMembers]);
 
+  const channelsByName = useMemo(() => {
+    const map = new Map<string, Channel>();
+    for (const channel of channels) {
+      if (channel.type === "TEXT") {
+        map.set(channel.name.toLowerCase(), channel);
+      }
+    }
+    return map;
+  }, [channels]);
+
   const resolveMentionMember = (token: string): ServerMember | null => {
     const lower = token.toLowerCase();
     return membersByUsername.get(lower) || membersByNickname.get(lower) || null;
@@ -1320,39 +1360,60 @@ const ChatArea = ({
       <span className="whitespace-pre-wrap">
         {lines.map((line, lineIndex) => {
           const parts: ReactNode[] = [];
-          const regex = /(^|\s)@([a-zA-Z0-9_]{1,32})/g;
+          // Match both @username and #channelname tokens
+          const regex = /(^|\s)([@#])([a-zA-Z0-9_\-]{1,32})/g;
           let lastIndex = 0;
           let match = regex.exec(line);
 
           while (match) {
             const fullMatch = match[0];
             const leading = match[1] ?? "";
-            const token = match[2] ?? "";
+            const sigil = match[2] ?? "";
+            const token = match[3] ?? "";
             const fullStart = match.index;
-            const mentionStart = fullStart + leading.length;
+            const tokenStart = fullStart + leading.length;
 
             if (fullStart > lastIndex) {
               parts.push(...renderEmojiText(line.slice(lastIndex, fullStart), `mention-text-${lineIndex}-${lastIndex}`));
             }
             if (leading) {
-              parts.push(...renderEmojiText(leading, `mention-leading-${lineIndex}-${mentionStart}`));
+              parts.push(...renderEmojiText(leading, `mention-leading-${lineIndex}-${tokenStart}`));
             }
 
-            const member = resolveMentionMember(token);
-            if (member) {
-              const display = member.nickname || member.user.nickname || member.user.username;
-              parts.push(
-                <button
-                  key={`mention-${lineIndex}-${mentionStart}-${member.user.id}`}
-                  type="button"
-                  onClick={() => onOpenProfile(member.user)}
-                  className="mx-0.5 rounded-[3px] bg-[#3a4273] px-1 font-medium text-[#d7e1ff] hover:bg-[#5865f2] hover:text-white"
-                >
-                  @{display}
-                </button>
-              );
+            if (sigil === "@") {
+              const member = resolveMentionMember(token);
+              if (member) {
+                const display = member.nickname || member.user.nickname || member.user.username;
+                parts.push(
+                  <button
+                    key={`mention-${lineIndex}-${tokenStart}-${member.user.id}`}
+                    type="button"
+                    onClick={() => onOpenProfile(member.user)}
+                    className="mx-0.5 rounded-[3px] bg-[#3a4273] px-1 font-medium text-[#d7e1ff] hover:bg-[#5865f2] hover:text-white"
+                  >
+                    @{display}
+                  </button>
+                );
+              } else {
+                parts.push(fullMatch);
+              }
             } else {
-              parts.push(fullMatch);
+              // sigil === "#"
+              const channel = channelsByName.get(token.toLowerCase());
+              if (channel) {
+                parts.push(
+                  <button
+                    key={`chanmention-${lineIndex}-${tokenStart}-${channel.id}`}
+                    type="button"
+                    onClick={() => onChannelClick?.(channel.id)}
+                    className="mx-0.5 rounded-[3px] bg-[#3a4273] px-1 font-medium text-[#d7e1ff] hover:bg-[#5865f2] hover:text-white"
+                  >
+                    #{channel.name}
+                  </button>
+                );
+              } else {
+                parts.push(fullMatch);
+              }
             }
 
             lastIndex = fullStart + fullMatch.length;
@@ -1387,7 +1448,7 @@ const ChatArea = ({
       );
     }
 
-    if (mode === "SERVER" && /(^|\s)@([a-zA-Z0-9_]{1,32})/.test(rawContent)) {
+    if (mode === "SERVER" && (/(^|\s)@([a-zA-Z0-9_]{1,32})/.test(rawContent) || (channels.length > 0 && /(^|\s)#([a-zA-Z0-9_\-]{1,32})/.test(rawContent)))) {
       return renderMentionPills(rawContent);
     }
 
@@ -1844,6 +1905,10 @@ const ChatArea = ({
     setHighlightedEmojiIndex(0);
   }, [emojiMenuOpen, emojiQuery]);
 
+  useEffect(() => {
+    setHighlightedChannelIndex(0);
+  }, [channelMenuOpen, channelQuery]);
+
   // Only load draft when the channel changes (activeDraftKey), not on every keystroke.
   // Including `drafts` in deps would re-clamp content on every char typed past the limit.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1907,6 +1972,12 @@ const ChatArea = ({
   const selectMention = (member: ServerMember): void => {
     setContent((prev) => prev.replace(/(?:^|\s)@([a-zA-Z0-9_]*)$/, (full) => `${full.startsWith(" ") ? " " : ""}@${member.user.username} `));
     setHighlightedMentionIndex(0);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const selectChannel = (channel: Channel): void => {
+    setContent((prev) => prev.replace(/(?:^|\s)#([a-zA-Z0-9_\-]*)$/, (full) => `${full.startsWith(" ") ? " " : ""}#${channel.name} `));
+    setHighlightedChannelIndex(0);
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
@@ -2870,11 +2941,13 @@ const ChatArea = ({
                     }
                   }
 
-                  if (mentionMenuOpen || emojiMenuOpen) {
+                  if (mentionMenuOpen || emojiMenuOpen || channelMenuOpen) {
                     if (event.key === "ArrowDown") {
                       event.preventDefault();
                       if (mentionMenuOpen) {
                         setHighlightedMentionIndex((current) => (current + 1) % mentionCandidates.length);
+                      } else if (channelMenuOpen) {
+                        setHighlightedChannelIndex((current) => (current + 1) % channelCandidates.length);
                       } else if (emojiMenuOpen) {
                         setHighlightedEmojiIndex((current) => (current + 1) % emojiCandidates.length);
                       }
@@ -2884,6 +2957,8 @@ const ChatArea = ({
                       event.preventDefault();
                       if (mentionMenuOpen) {
                         setHighlightedMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length);
+                      } else if (channelMenuOpen) {
+                        setHighlightedChannelIndex((current) => (current - 1 + channelCandidates.length) % channelCandidates.length);
                       } else if (emojiMenuOpen) {
                         setHighlightedEmojiIndex((current) => (current - 1 + emojiCandidates.length) % emojiCandidates.length);
                       }
@@ -2893,6 +2968,8 @@ const ChatArea = ({
                       event.preventDefault();
                       if (mentionMenuOpen) {
                         selectMention(mentionCandidates[highlightedMentionIndex] ?? mentionCandidates[0]);
+                      } else if (channelMenuOpen) {
+                        selectChannel(channelCandidates[highlightedChannelIndex] ?? channelCandidates[0]);
                       } else if (emojiMenuOpen) {
                         selectEmoji(emojiCandidates[highlightedEmojiIndex] ?? emojiCandidates[0]);
                       }
@@ -3023,6 +3100,33 @@ const ChatArea = ({
                       </span>
                     </div>
                     <span className="truncate text-sm text-white">{display}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {channelMenuOpen ? (
+          <div className="absolute bottom-14 left-4 right-4 z-40 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg">
+            <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
+              Channels matching #{channelQuery}
+            </p>
+            <div className="py-1">
+              {channelCandidates.map((channel, index) => {
+                const selected = index === highlightedChannelIndex;
+                return (
+                  <button
+                    key={channel.id}
+                    type="button"
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left ${selected ? "bg-[#3a3d45]" : "hover:bg-[#2b2d31]"}`}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      selectChannel(channel);
+                    }}
+                  >
+                    <span className="shrink-0 text-discord-muted">#</span>
+                    <span className="truncate text-sm text-white">{channel.name}</span>
                   </button>
                 );
               })}

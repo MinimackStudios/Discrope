@@ -188,7 +188,13 @@ const MainPage = (): JSX.Element => {
 
   useEffect(() => {
     bindSocketEvents(user);
-  }, [bindSocketEvents, user]);
+    // Depend only on user.id, not the full user object reference. restoreSession
+    // first sets a cached user then overwrites with a fresh API response — the
+    // same user, but a new object reference. That would normally fire this effect
+    // twice, calling socket.off("presence:sync") while the first presence:sync
+    // packet is still in-flight, dropping it and leaving everyone "offline".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bindSocketEvents, user?.id]);
 
   useEffect(() => {
     if (user && apiUnreachable) {
@@ -525,6 +531,8 @@ const MainPage = (): JSX.Element => {
             focusMessageId={mode === "SERVER" ? channelOpenFocusMessageId : dmChannelOpenFocusMessageId}
             typingUsers={(typingByChannel[mode === "SERVER" ? (activeChannelId ?? "") : (activeDMId ?? "")] ?? []).map((entry) => entry.displayName)}
             mentionMembers={activeServer?.members ?? []}
+            channels={activeServer?.channels ?? []}
+            onChannelClick={setActiveChannel}
             onOpenProfile={setProfileUser}
             canModerateServerMessages={Boolean(isServerOwner)}
             channelReadOnly={mode === "SERVER" ? Boolean(activeChannel?.readOnly) : false}
