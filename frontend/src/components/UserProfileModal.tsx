@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { User } from "../types";
+import type { Server, User } from "../types";
 import { AnimatePresence, motion } from "framer-motion";
 import { formatStatusLabel } from "../lib/formatStatus";
 import { resolveMediaUrl, resolveUserAvatarUrl } from "../lib/media";
@@ -14,6 +14,7 @@ type Props = {
   me: User | null;
   friends: User[];
   outgoingPendingFriends: User[];
+  servers?: Server[];
   onClose: () => void;
   onAddFriend: (username: string) => Promise<void>;
   onStartDM: (userId: string) => Promise<void>;
@@ -38,8 +39,9 @@ const formatJoinDate = (value?: string | null): string | null => {
   return joinDateFormatter.format(date);
 };
 
-const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, friends, outgoingPendingFriends, onClose, onAddFriend, onStartDM }: Props): JSX.Element | null => {
+const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, friends, outgoingPendingFriends, servers = [], onClose, onAddFriend, onStartDM }: Props): JSX.Element | null => {
   const [displayedUser, setDisplayedUser] = useState<User | null>(user);
+  const [serversExpanded, setServersExpanded] = useState(false);
   const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(onClose);
 
   useEffect(() => {
@@ -65,6 +67,9 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
   const trimmedServerName = serverName?.trim();
   const serverMembershipLabel = trimmedServerName ? `Member of ${trimmedServerName} Since` : "Member Since";
   const accentBg = profileUser.accentColor || undefined;
+  const mutualServers = !isSelf && !isDeletedUser && !isSystemUser
+    ? servers.filter((s) => s.members.some((m) => m.userId === profileUser.id))
+    : [];
 
   return (
     <AnimatePresence onExitComplete={() => setDisplayedUser(user ?? null)}>
@@ -99,7 +104,12 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
               style={{ borderColor: accentBg ?? "#2b2d31" }}
             />
             <span className="absolute bottom-1 right-1">
-              <StatusDot status={profileUser.status} sizeClassName="h-4 w-4" cutoutClassName="ring-4 ring-[#2b2d31]" />
+              <StatusDot
+                status={profileUser.status}
+                sizeClassName="h-4 w-4"
+                cutoutColor={accentBg ?? "#2b2d31"}
+                ringColor={accentBg ?? "#2b2d31"}
+              />
             </span>
           </div>
           <div className="pt-12">
@@ -136,6 +146,37 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
                 </div>
               ) : null}
             </div>
+
+            {mutualServers.length > 0 ? (
+              <div className={`mt-3 rounded-md ${accentBg ? "bg-black/20" : "bg-[#1e1f22]"}`}>
+                <button
+                  className="flex w-full items-center justify-between p-3 text-left"
+                  onClick={() => setServersExpanded((v) => !v)}
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Mutual Servers — {mutualServers.length}</p>
+                  <svg
+                    className={`h-3 w-3 flex-shrink-0 text-discord-muted transition-transform duration-150 ${serversExpanded ? "rotate-180" : ""}`}
+                    viewBox="0 0 12 12"
+                    fill="currentColor"
+                  >
+                    <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                {serversExpanded ? (
+                  <div className="px-3 pb-3 space-y-2">
+                    {mutualServers.map((server) => (
+                      <div key={server.id} className="flex items-center gap-2">
+                        {server.iconUrl
+                          ? <img src={resolveMediaUrl(server.iconUrl) ?? ""} alt={server.name} className="h-8 w-8 rounded-full object-cover flex-shrink-0" />
+                          : <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-discord-blurple text-xs font-bold text-white">{server.name.charAt(0).toUpperCase()}</div>
+                        }
+                        <span className="truncate text-sm text-discord-text">{server.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {!isSelf && !isDeletedUser && !isSystemUser ? (
               <div className="mt-3 flex gap-2">

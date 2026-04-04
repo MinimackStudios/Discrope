@@ -532,7 +532,7 @@ const MainPage = (): JSX.Element => {
         )}
 
         {homeActive ? (
-          <DMProfilePanel user={activeDMUser} />
+          <DMProfilePanel user={activeDMUser} me={user} servers={servers} />
         ) : (
           <MemberList
             members={activeServer?.members ?? []}
@@ -646,11 +646,7 @@ const MainPage = (): JSX.Element => {
         serverId={activeServerId}
         categories={activeServer?.categories ?? []}
         onClose={() => setCreateChannelOpen(false)}
-        onCreated={async () => {
-          if (activeServerId) {
-            await setActiveServer(activeServerId);
-          }
-        }}
+        onCreated={async () => { /* channel:created socket event handles the store update */ }}
       />
 
       <UserProfileModal
@@ -661,6 +657,7 @@ const MainPage = (): JSX.Element => {
         me={user}
         friends={friends}
         outgoingPendingFriends={outgoingPendingFriends}
+        servers={servers}
         onClose={() => setProfileUser(null)}
         onAddFriend={sendFriendRequest}
         onStartDM={async (userId) => {

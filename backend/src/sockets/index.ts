@@ -11,6 +11,10 @@ const normalizeOrigin = (value: string): string => {
   }
 };
 
+const onlineUsers = new Map<string, Set<string>>();
+
+export const getOnlineUserIds = (): Set<string> => new Set(onlineUsers.keys());
+
 export const initSocket = (server: HttpServer): Server => {
   const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? "")
     .split(",")
@@ -33,7 +37,6 @@ export const initSocket = (server: HttpServer): Server => {
     }
   });
 
-  const onlineUsers = new Map<string, Set<string>>();
   const resolveTypingTarget = (
     payload: string | { scope?: "CHANNEL" | "DM"; id?: string }
   ): { id: string; room: string } | null => {

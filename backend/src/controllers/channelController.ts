@@ -150,6 +150,9 @@ export const createChannel = async (req: Request, res: Response): Promise<void> 
     persist: false
   });
 
+  const io = req.app.get("io");
+  io.emit("channel:created", { serverId, channel });
+
   res.status(201).json({ channel });
 };
 
@@ -398,6 +401,10 @@ export const deleteChannel = async (req: Request, res: Response): Promise<void> 
     targetServerId: channel.serverId,
     persist: false
   });
+
+  const io = req.app.get("io");
+  io.emit("channel:deleted", { serverId: channel.serverId, channelId });
+
   res.json({ deleted: true });
 };
 

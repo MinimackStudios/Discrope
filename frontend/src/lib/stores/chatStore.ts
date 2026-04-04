@@ -1378,6 +1378,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
         notices: [...s.notices, { id: `${Date.now()}-${Math.random()}`, title: notice.title, body: notice.body }]
       }));
     });
+
+    socket.on("channel:created", ({ serverId, channel }: { serverId: string; channel: Channel }) => {
+      set((state) => ({
+        servers: state.servers.map((server) => {
+          if (server.id !== serverId) return server;
+          if (server.channels.some((c) => c.id === channel.id)) return server;
+          return { ...server, channels: [...server.channels, channel] };
+        })
+      }));
+    });
+
+    socket.on("channel:deleted", ({ serverId, channelId }: { serverId: string; channelId: string }) => {
+      const { activeChannelId, servers } = get();
+      const server = servers.find((s) => s.id === serverId);
+      const remainingChannels = server?.channels.filter((c) => c.id !== channelId) ?? [];
+
+      set((state) => ({
+        servers: state.servers.map((s) =>
+          s.id !== serverId ? s : { ...s, channels: remainingChannels }
+        ),
+        ...(activeChannelId === channelId
+          ? { activeChannelId: remainingChannels.find((c) => c.type === "TEXT")?.id ?? null }
+          : {})
+      }));
+    });
   }
 }));
 

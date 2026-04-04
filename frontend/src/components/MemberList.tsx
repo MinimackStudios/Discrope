@@ -83,7 +83,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                       className="h-8 w-8 rounded-full"
                     />
                     <span className="absolute -bottom-1 -right-0.5">
-                      <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#2b2d31]" />
+                      <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutColor="#2f3136" ringColor="#2f3136" ringWidth={2} />
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
@@ -116,7 +116,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                       className="h-8 w-8 rounded-full opacity-70"
                     />
                     <span className="absolute -bottom-1 -right-0.5">
-                      <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#2b2d31]" />
+                      <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutColor="#2f3136" ringColor="#2f3136" ringWidth={2} />
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">

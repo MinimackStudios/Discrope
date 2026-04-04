@@ -95,11 +95,6 @@ const VIRTUALIZATION_THRESHOLD = 0;
 const DEFAULT_MESSAGE_ROW_HEIGHT = 84;
 const VIRTUALIZATION_OVERSCAN_PX = 200;
 const EMOJI_REGEX = /(?:[\u{1F1E6}-\u{1F1FF}]{1,2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)/gu;
-const TWEMOJI_CDN_BASE_URLS = [
-  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/",
-  "https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/svg/",
-  "https://unpkg.com/twemoji@14.0.2/dist/svg/"
-] as const;
 const EMOJI_AUTOCOMPLETE_LIMIT = 8;
 
 const REACTION_PICKER_HEIGHT = 404;
@@ -235,7 +230,12 @@ const EMOJI_SEARCH_INDEX: EmojiSearchEntry[] = [
     searchTerms: [shortcode, normalizedName, ...normalizedKeywords]
   }));
   }),
-  ...REGIONAL_INDICATOR_ENTRIES
+  ...REGIONAL_INDICATOR_ENTRIES,
+  // Emoji 15.1+ entries missing from @emoji-mart/data v1.2.1
+  { shortcode: "head_shaking_horizontally", emoji: "🙂‍↔️", searchTerms: ["head_shaking_horizontally", "head shaking horizontally", "no", "nope", "shake", "horizontal"] },
+  { shortcode: "head_shaking_vertically",   emoji: "🙂‍↕️", searchTerms: ["head_shaking_vertically",   "head shaking vertically",   "yes", "nod",   "shake", "vertical"] },
+  { shortcode: "distorted_face",            emoji: "🫪",   searchTerms: ["distorted_face",            "distorted face",            "weird", "warp",  "glitch"] },
+  { shortcode: "face_with_bags_under_eyes", emoji: "🫩",   searchTerms: ["face_with_bags_under_eyes", "tired", "sleepy", "exhausted", "bags"] },
 ];
 
 const EMOJI_BY_SHORTCODE = EMOJI_SEARCH_INDEX.reduce<Map<string, string>>((map, entry) => {
@@ -320,23 +320,45 @@ const persistDrafts = (drafts: Record<string, string>): void => {
   window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
 };
 
-const toEmojiUnified = (emoji: string): string => {
+const toEmojiUnified = (emoji: string, keepFe0f = false): string => {
   const codepoints = Array.from(emoji)
     .map((char) => char.codePointAt(0)?.toString(16) ?? "")
     .filter(Boolean);
 
-  // Twemoji strips all FE0F/FE0E variation selectors from filenames.
-  const normalized = codepoints.filter((codepoint) => codepoint !== "fe0f" && codepoint !== "fe0e");
+  // Original Twemoji strips all FE0F/FE0E variation selectors from filenames.
+  // jdecked keeps fe0f in some ZWJ sequences (e.g. 🙂‍↔️), so we expose both forms.
+  const normalized = keepFe0f
+    ? codepoints.filter((codepoint) => codepoint !== "fe0e")
+    : codepoints.filter((codepoint) => codepoint !== "fe0f" && codepoint !== "fe0e");
 
   return normalized.join("-");
 };
 
+const JDECKED_BASE = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.2/assets/svg/";
+const LEGACY_CDN_BASE_URLS = [
+  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/",
+  "https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/svg/",
+  "https://unpkg.com/twemoji@14.0.2/dist/svg/"
+] as const;
+
 const emojiImageUrls = (emoji: string): string[] => {
-  const unified = toEmojiUnified(emoji);
-  if (!unified) {
+  const unifiedNoFe0f = toEmojiUnified(emoji, false);
+  if (!unifiedNoFe0f) {
     return [];
   }
-  return TWEMOJI_CDN_BASE_URLS.map((baseUrl) => `${baseUrl}${unified}.svg`);
+  const unifiedWithFe0f = toEmojiUnified(emoji, true);
+  const urls: string[] = [];
+  // Try jdecked without fe0f first (covers most emojis).
+  urls.push(`${JDECKED_BASE}${unifiedNoFe0f}.svg`);
+  // Try jdecked with fe0f as fallback (needed for some Emoji 15.1 ZWJ sequences).
+  if (unifiedWithFe0f !== unifiedNoFe0f) {
+    urls.push(`${JDECKED_BASE}${unifiedWithFe0f}.svg`);
+  }
+  // Old Twemoji mirrors as final fallbacks.
+  for (const base of LEGACY_CDN_BASE_URLS) {
+    urls.push(`${base}${unifiedNoFe0f}.svg`);
+  }
+  return urls;
 };
 
 const unifiedToEmoji = (unified: string): string => {
@@ -355,16 +377,25 @@ const emojiOnlySegments = (text: string): string[] => {
   }
 
   const parts = trimmed.split(/\s+/).filter(Boolean);
-  if (!parts.length || parts.length > 12) {
+  if (!parts.length) {
     return [];
   }
 
-  return parts.every((part) => {
+  const allEmojis: string[] = [];
+  for (const part of parts) {
     const matches = [...part.matchAll(EMOJI_REGEX)].map((match) => match[0]);
-    return matches.length > 0 && matches.join("") === part && matches.every((emoji) => emojiImageUrls(emoji).length > 0);
-  })
-    ? parts
-    : [];
+    // Part must be entirely composed of renderable emoji (no stray text).
+    if (!matches.length || matches.join("") !== part || !matches.every((emoji) => emojiImageUrls(emoji).length > 0)) {
+      return [];
+    }
+    allEmojis.push(...matches);
+  }
+
+  if (allEmojis.length > 12) {
+    return [];
+  }
+
+  return allEmojis;
 };
 
 const EmojiInlineImage = ({ emoji, sizeClassName = "h-[1.3em] w-[1.3em]" }: { emoji: string; sizeClassName?: string }): JSX.Element => {
@@ -833,8 +864,22 @@ const ImageAttachmentPreview = ({
     probe.onload = () => {
       const naturalWidth = probe.naturalWidth || 1;
       const naturalHeight = probe.naturalHeight || 1;
-      const displayHeight = Math.min(naturalHeight, 320);
-      const displayWidth = Math.max(120, Math.round(naturalWidth * (displayHeight / naturalHeight)));
+      // Cap width to avoid horizontal overflow in the chat area.
+      const MAX_WIDTH = 480;
+      const MAX_HEIGHT = 320;
+      const ratio = naturalWidth / naturalHeight;
+      let displayWidth = naturalWidth;
+      let displayHeight = naturalHeight;
+      // Scale down proportionally to fit within max bounds.
+      if (displayWidth > MAX_WIDTH) {
+        displayWidth = MAX_WIDTH;
+        displayHeight = Math.round(MAX_WIDTH / ratio);
+      }
+      if (displayHeight > MAX_HEIGHT) {
+        displayHeight = MAX_HEIGHT;
+        displayWidth = Math.round(MAX_HEIGHT * ratio);
+      }
+      displayWidth = Math.max(120, displayWidth);
       setReservedSize({ width: displayWidth, height: displayHeight });
       setLoaded(true);
     };
@@ -858,7 +903,7 @@ const ImageAttachmentPreview = ({
 
   return (
     <div
-      className="relative inline-block overflow-hidden rounded-md bg-[#2b2d31]"
+      className="relative inline-block max-w-full overflow-hidden rounded-md bg-[#2b2d31]"
       style={reservedSize ? { width: reservedSize.width, height: reservedSize.height } : { width: 320, height: 180 }}
     >
       {!loaded ? <div className="absolute inset-0 bg-[#2b2d31]" /> : null}
@@ -3015,7 +3060,8 @@ const ChatArea = ({
             <DiscordEmojiPicker
               variant="composer"
               onEmojiClick={(emoji, shiftKey) => {
-                const nextValue = `${content}${emoji}`;
+                const separator = content.length > 0 && !/\s$/.test(content) ? " " : "";
+                const nextValue = `${content}${separator}${emoji} `;
                 applyComposerValue(nextValue);
                 if (!shiftKey) setShowPicker(false);
                 window.requestAnimationFrame(() => {

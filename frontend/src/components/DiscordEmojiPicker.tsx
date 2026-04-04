@@ -1,10 +1,49 @@
 import { useState } from "react";
-import EmojiPicker, { EmojiClickData, EmojiStyle, SuggestionMode, Theme } from "emoji-picker-react";
+import EmojiPicker, { Categories, CategoryConfig, EmojiClickData, EmojiStyle, SuggestionMode, Theme } from "emoji-picker-react";
+
+const PICKER_CATEGORIES: CategoryConfig[] = [
+  { category: Categories.SUGGESTED,       name: "Frequently Used" },
+  { category: Categories.CUSTOM,          name: "New Emojis" },
+  { category: Categories.SMILEYS_PEOPLE,  name: "Smileys & People" },
+  { category: Categories.ANIMALS_NATURE,  name: "Animals & Nature" },
+  { category: Categories.FOOD_DRINK,      name: "Food & Drink" },
+  { category: Categories.TRAVEL_PLACES,   name: "Travel & Places" },
+  { category: Categories.ACTIVITIES,      name: "Activities" },
+  { category: Categories.OBJECTS,         name: "Objects" },
+  { category: Categories.SYMBOLS,         name: "Symbols" },
+  { category: Categories.FLAGS,           name: "Flags" },
+];
 
 type Props = {
   onEmojiClick: (emoji: string, shiftKey: boolean) => void;
   variant?: "composer" | "reaction";
 };
+
+const JDECKED_BASE = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.2/assets/svg/";
+
+// Emoji 15.1+ entries missing from emoji-picker-react's internal dataset.
+// id → actual Unicode character, used to resolve clicks back to characters.
+const CUSTOM_EMOJI_CHAR: Record<string, string> = {
+  face_with_bags_under_eyes: "🫩",
+  distorted_face: "🫪",
+  head_shaking_horizontally: "🙂\u200D\u2194\uFE0F",
+  head_shaking_vertically: "🙂\u200D\u2195\uFE0F",
+};
+
+const CUSTOM_EMOJIS = [
+  {
+    id: "face_with_bags_under_eyes",
+    names: ["Face with Bags Under Eyes"],
+    imgUrl: `${JDECKED_BASE}1fae9.svg`,
+    keywords: ["face_with_bags_under_eyes", "tired", "sleepy", "bags", "exhausted"],
+  },
+  {
+    id: "distorted_face",
+    names: ["Distorted Face"],
+    imgUrl: `${JDECKED_BASE}1faea.svg`,
+    keywords: ["distorted_face", "distorted", "weird", "warp", "glitch"],
+  },
+];
 
 const REGIONAL_INDICATOR_BUTTONS = Array.from({ length: 26 }, (_, index) => {
   const letter = String.fromCharCode(65 + index);
@@ -95,12 +134,19 @@ const DiscordEmojiPicker = ({ onEmojiClick, variant = "composer" }: Props): JSX.
         </div>
       ) : (
         <EmojiPicker
-          onEmojiClick={(emojiData: EmojiClickData, event: MouseEvent) => onEmojiClick(emojiData.emoji, event.shiftKey)}
+          onEmojiClick={(emojiData: EmojiClickData, event: MouseEvent) => {
+            const char = emojiData.isCustom
+              ? (CUSTOM_EMOJI_CHAR[emojiData.emoji] ?? emojiData.emoji)
+              : emojiData.emoji;
+            onEmojiClick(char, event.shiftKey);
+          }}
           theme={Theme.DARK}
           emojiStyle={EmojiStyle.TWITTER}
           searchPlaceholder="Search emojis"
           previewConfig={{ showPreview: false }}
           suggestedEmojisMode={SuggestionMode.FREQUENT}
+          customEmojis={CUSTOM_EMOJIS}
+          categories={PICKER_CATEGORIES}
           className={`discord-emoji-picker discord-emoji-picker--${variant}`}
           height={bodyHeight}
           width={bodyWidth}

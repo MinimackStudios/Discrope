@@ -5,6 +5,7 @@ import path from "node:path";
 import { prisma } from "../lib/prisma";
 import { logAdminEvent } from "../lib/adminAudit";
 import { adminEventsBus } from "../lib/adminEvents";
+import { getOnlineUserIds } from "../sockets";
 
 const prismaAny = prisma as any;
 const DELETED_USERNAME = "deleteduser";
@@ -143,8 +144,22 @@ export const getServerDetail = async (req: Request, res: Response): Promise<void
     })
   ]);
 
+  const onlineIds = getOnlineUserIds();
+  const serverWithPresence = {
+    ...server,
+    members: server.members.map((m) => ({
+      ...m,
+      user: {
+        ...m.user,
+        status: onlineIds.has(m.user.id)
+          ? (m.user.status === "OFFLINE" ? "ONLINE" : m.user.status)
+          : "OFFLINE"
+      }
+    }))
+  };
+
   res.json({
-    server,
+    server: serverWithPresence,
     recentMessages,
     recentEvents
   });
