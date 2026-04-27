@@ -32,6 +32,25 @@ model User {
   incomingRequests  FriendRequest[]  @relation("IncomingRequests")
   dmChannels        DMChannel[]      @relation("DMParticipants")
   serverBans        ServerBan[]
+  noticeDismissals  NoticeDismissal[]
+}
+
+model BroadcastNotice {
+  id         String            @id @default(cuid())
+  title      String
+  body       String
+  createdAt  DateTime          @default(now())
+  dismissals NoticeDismissal[]
+}
+
+model NoticeDismissal {
+  userId    String
+  noticeId  String
+  createdAt DateTime        @default(now())
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notice    BroadcastNotice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, noticeId])
 }
 
 model AdminEvent {

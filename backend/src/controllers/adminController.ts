@@ -58,8 +58,16 @@ export const broadcastNotice = async (req: Request, res: Response): Promise<void
     return;
   }
 
+  const notice = await prismaAny.broadcastNotice.create({
+    data: { title, body },
+    select: { id: true, title: true, body: true, createdAt: true }
+  });
+
   const io = req.app.get("io") as IOServer;
-  io.emit("notice:broadcast", { title, body });
+  io.emit("notice:broadcast", {
+    ...notice,
+    createdAt: notice.createdAt.toISOString()
+  });
 
   await logAdminEvent({
     type: "NOTICE_BROADCAST",

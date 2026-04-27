@@ -8,6 +8,16 @@ const prismaAny = prisma as any;
 const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const DELETED_USERNAME = "deleteduser";
 const SYSTEM_USERNAME = "Windcord";
+const SYSTEM_NOTICE_SELECT = {
+  id: true,
+  title: true,
+  body: true,
+  createdAt: true
+};
+
+const isHereMentionEligibleStatus = (status?: string | null): boolean => {
+  return status === "ONLINE" || status === "IDLE" || status === "DND";
+};
 
 const toLocalUploadPath = (url?: string | null): string | null => {
   if (!url || !url.startsWith("/uploads/")) {
@@ -61,6 +71,64 @@ export const findUsers = async (req: Request, res: Response): Promise<void> => {
   });
 
   res.json({ users });
+};
+
+export const listSystemNotices = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+
+  const user = await prismaAny.user.findUnique({
+    where: { id: userId },
+    select: { createdAt: true }
+  });
+
+  if (!user) {
+    res.status(404).json({ message: "User not found" });
+    return;
+  }
+
+  const notices = await prismaAny.broadcastNotice.findMany({
+    where: {
+      createdAt: { gte: user.createdAt },
+      dismissals: {
+        none: { userId }
+      }
+    },
+    orderBy: { createdAt: "asc" },
+    select: SYSTEM_NOTICE_SELECT
+  });
+
+  res.json({ notices });
+};
+
+export const dismissSystemNotice = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const { noticeId } = req.params;
+
+  const notice = await prismaAny.broadcastNotice.findUnique({
+    where: { id: noticeId },
+    select: { id: true }
+  });
+
+  if (!notice) {
+    res.json({ ok: true });
+    return;
+  }
+
+  await prismaAny.noticeDismissal.upsert({
+    where: {
+      userId_noticeId: {
+        userId,
+        noticeId
+      }
+    },
+    update: {},
+    create: {
+      userId,
+      noticeId
+    }
+  });
+
+  res.json({ ok: true });
 };
 
 export const updateSelf = async (req: Request, res: Response): Promise<void> => {
@@ -275,8 +343,8 @@ export const getUnreadCounts = async (req: Request, res: Response): Promise<void
   const dmUnread: Record<string, number> = {};
   const dmMentions: Record<string, number> = {};
 
-  // Fetch current user's username for mention counting
-  const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+  // Fetch current user's username and presence for mention counting.
+  const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { username: true, status: true } });
   const currentUsername = currentUser?.username?.toLowerCase() ?? "";
   const escapedUsername = currentUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const mentionRegex = new RegExp(`@${escapedUsername}(?![a-z0-9_])`, 'gi');
@@ -330,7 +398,9 @@ export const getUnreadCounts = async (req: Request, res: Response): Promise<void
           const content = msg.content ?? "";
           const usernameMentions = (content.match(mentionRegex) || []).length;
           const everyoneMentions = (content.match(everyoneRegex) || []).length;
-          const hereMentions = (content.match(hereRegex) || []).length;
+          const hereMentions = isHereMentionEligibleStatus(currentUser?.status)
+            ? (content.match(hereRegex) || []).length
+            : 0;
           mentionCount += usernameMentions + everyoneMentions + hereMentions;
         }
       }

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteSelf = exports.getUnreadCounts = exports.removeFriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.sendFriendRequest = exports.listFriends = exports.updateSelf = exports.findUsers = void 0;
+exports.deleteSelf = exports.getUnreadCounts = exports.removeFriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.sendFriendRequest = exports.listFriends = exports.updateSelf = exports.dismissSystemNotice = exports.listSystemNotices = exports.findUsers = void 0;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const prisma_1 = require("../lib/prisma");
@@ -12,6 +12,15 @@ const prismaAny = prisma_1.prisma;
 const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const DELETED_USERNAME = "deleteduser";
 const SYSTEM_USERNAME = "Windcord";
+const SYSTEM_NOTICE_SELECT = {
+    id: true,
+    title: true,
+    body: true,
+    createdAt: true
+};
+const isHereMentionEligibleStatus = (status) => {
+    return status === "ONLINE" || status === "IDLE" || status === "DND";
+};
 const toLocalUploadPath = (url) => {
     if (!url || !url.startsWith("/uploads/")) {
         return null;
@@ -59,6 +68,56 @@ const findUsers = async (req, res) => {
     res.json({ users });
 };
 exports.findUsers = findUsers;
+const listSystemNotices = async (req, res) => {
+    const userId = req.user.id;
+    const user = await prismaAny.user.findUnique({
+        where: { id: userId },
+        select: { createdAt: true }
+    });
+    if (!user) {
+        res.status(404).json({ message: "User not found" });
+        return;
+    }
+    const notices = await prismaAny.broadcastNotice.findMany({
+        where: {
+            createdAt: { gte: user.createdAt },
+            dismissals: {
+                none: { userId }
+            }
+        },
+        orderBy: { createdAt: "asc" },
+        select: SYSTEM_NOTICE_SELECT
+    });
+    res.json({ notices });
+};
+exports.listSystemNotices = listSystemNotices;
+const dismissSystemNotice = async (req, res) => {
+    const userId = req.user.id;
+    const { noticeId } = req.params;
+    const notice = await prismaAny.broadcastNotice.findUnique({
+        where: { id: noticeId },
+        select: { id: true }
+    });
+    if (!notice) {
+        res.json({ ok: true });
+        return;
+    }
+    await prismaAny.noticeDismissal.upsert({
+        where: {
+            userId_noticeId: {
+                userId,
+                noticeId
+            }
+        },
+        update: {},
+        create: {
+            userId,
+            noticeId
+        }
+    });
+    res.json({ ok: true });
+};
+exports.dismissSystemNotice = dismissSystemNotice;
 const updateSelf = async (req, res) => {
     const userId = req.user.id;
     const { username, status, removeAvatar } = req.body;
@@ -231,8 +290,8 @@ const getUnreadCounts = async (req, res) => {
     const channelMentions = {};
     const dmUnread = {};
     const dmMentions = {};
-    // Fetch current user's username for mention counting
-    const currentUser = await prisma_1.prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+    // Fetch current user's username and presence for mention counting.
+    const currentUser = await prisma_1.prisma.user.findUnique({ where: { id: userId }, select: { username: true, status: true } });
     const currentUsername = currentUser?.username?.toLowerCase() ?? "";
     const escapedUsername = currentUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const mentionRegex = new RegExp(`@${escapedUsername}(?![a-z0-9_])`, 'gi');
@@ -280,7 +339,9 @@ const getUnreadCounts = async (req, res) => {
                     const content = msg.content ?? "";
                     const usernameMentions = (content.match(mentionRegex) || []).length;
                     const everyoneMentions = (content.match(everyoneRegex) || []).length;
-                    const hereMentions = (content.match(hereRegex) || []).length;
+                    const hereMentions = isHereMentionEligibleStatus(currentUser?.status)
+                        ? (content.match(hereRegex) || []).length
+                        : 0;
                     mentionCount += usernameMentions + everyoneMentions + hereMentions;
                 }
             }
