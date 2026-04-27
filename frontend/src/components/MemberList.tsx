@@ -1,4 +1,4 @@
-import { type MouseEvent, useEffect, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 import { resolveUserAvatarUrl } from "../lib/media";
 import type { ServerMember, User } from "../types";
 import { formatStatusLabel } from "../lib/formatStatus";
@@ -14,6 +14,8 @@ type Props = {
   onKick?: (memberId: string) => void;
   onBan?: (memberId: string) => void;
   onSetNickColor?: () => void;
+  topSlot?: ReactNode;
+  expanded?: boolean;
 };
 
 type ContextMenuState = {
@@ -23,7 +25,7 @@ type ContextMenuState = {
   isSelf: boolean;
 };
 
-const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId, ownerId, onKick, onBan, onSetNickColor }: Props): JSX.Element => {
+const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId, ownerId, onKick, onBan, onSetNickColor, topSlot, expanded = false }: Props): JSX.Element => {
   const activeStatuses = new Set(["ONLINE", "IDLE", "DND"]);
   const online = members.filter((m) => activeStatuses.has(m.user.status));
   const offline = members.filter((m) => !activeStatuses.has(m.user.status));
@@ -61,8 +63,18 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
   };
 
   return (
-    <aside className="hidden h-full w-60 bg-discord-dark2 xl:block">
-      <div className="discord-scrollbar h-full overflow-y-auto p-3 text-sm">
+    <aside
+      className={`relative hidden h-full flex-shrink-0 overflow-hidden border-l border-white/[0.03] transition-[width] duration-150 ease-out xl:block ${expanded ? "w-[21rem]" : "w-60"}`}
+      style={{ background: "var(--wc-member-panel-bg)" }}
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        {topSlot ? (
+          <div className="z-20 border-b border-white/[0.04] px-3 pb-2 pt-3">
+            {topSlot}
+          </div>
+        ) : null}
+
+        <div className="discord-scrollbar min-h-0 flex-1 overflow-y-auto p-3.5 text-sm">
         <section>
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Online — {online.length}</h3>
           <div className="space-y-1">
@@ -72,7 +84,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
               return (
                 <div
                   key={member.userId}
-                  className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-[#35373c]"
+                  className="wc-member-list-item flex w-full cursor-pointer items-center gap-2 rounded-xl border-0 px-2.5 py-2 text-left transition hover:bg-white/[0.04]"
                   onClick={() => onSelectUser(member.user)}
                   onContextMenu={(event) => handleMemberContextMenu(event, member)}
                 >
@@ -83,11 +95,11 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                       className="h-8 w-8 rounded-full"
                     />
                     <span className="absolute -bottom-1 -right-0.5">
-                      <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutColor="#2f3136" ringColor="#2f3136" ringWidth={2} />
+                      <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutColor="var(--wc-member-panel-cutout)" ringColor="var(--wc-member-panel-cutout)" ringWidth={2} />
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium" style={{ color: member.nickColor ?? "white" }}>{displayName}</p>
+                    <p className="truncate text-sm font-medium" style={{ color: member.nickColor ?? "#f2f3f5" }}>{displayName}</p>
                     <p className="truncate text-[11px] text-discord-muted">{secondary}</p>
                   </div>
                 </div>
@@ -105,7 +117,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
               return (
                 <div
                   key={member.userId}
-                  className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-discord-muted hover:bg-[#35373c]"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-left text-discord-muted transition hover:bg-white/[0.04]"
                   onClick={() => onSelectUser(member.user)}
                   onContextMenu={(event) => handleMemberContextMenu(event, member)}
                 >
@@ -116,11 +128,11 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                       className="h-8 w-8 rounded-full opacity-70"
                     />
                     <span className="absolute -bottom-1 -right-0.5">
-                      <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutColor="#2f3136" ringColor="#2f3136" ringWidth={2} />
+                      <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutColor="var(--wc-member-panel-cutout)" ringColor="var(--wc-member-panel-cutout)" ringWidth={2} />
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium" style={{ color: member.nickColor ? `${member.nickColor}99` : undefined }}>{displayName}</p>
+                    <p className="truncate text-sm font-medium" style={{ color: member.nickColor ? `${member.nickColor}cc` : "#949ba4" }}>{displayName}</p>
                     <p className="truncate text-[11px]">{secondary}</p>
                   </div>
                 </div>
@@ -128,17 +140,18 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
             })}
           </div>
         </section>
+        </div>
       </div>
 
       {contextMenu ? (
         <div
-          className="fixed z-50 w-44 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg"
+          className="wc-popover fixed z-50 w-44 overflow-hidden rounded-xl"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(event) => event.stopPropagation()}
         >
           {contextMenu.isSelf ? (
             <button
-              className="w-full px-3 py-2 text-left text-sm text-discord-text hover:bg-[#2b2d31]"
+              className="w-full px-3 py-2 text-left text-sm text-discord-text transition hover:bg-white/[0.06]"
               onClick={() => {
                 onSetNickColor?.();
                 setContextMenu(null);
@@ -149,7 +162,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
           ) : (
             <>
               <button
-                className="w-full px-3 py-2 text-left text-sm text-[#f0b232] hover:bg-[#2b2d31]"
+                className="w-full px-3 py-2 text-left text-sm text-[#f0b232] transition hover:bg-white/[0.06]"
                 onClick={() => {
                   onKick?.(contextMenu.memberId);
                   setContextMenu(null);
@@ -158,7 +171,7 @@ const MemberList = ({ members, onSelectUser, canModerate = false, currentUserId,
                 Kick Member
               </button>
               <button
-                className="w-full px-3 py-2 text-left text-sm text-[#ed4245] hover:bg-[#2b2d31]"
+                className="w-full px-3 py-2 text-left text-sm text-[#ed4245] transition hover:bg-white/[0.06]"
                 onClick={() => {
                   onBan?.(contextMenu.memberId);
                   setContextMenu(null);

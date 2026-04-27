@@ -3,15 +3,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteServerAsAdmin = exports.deleteUserAccountAsAdmin = exports.streamAdminEvents = exports.getServerDetail = exports.getOverview = void 0;
+exports.deleteServerAsAdmin = exports.deleteUserAccountAsAdmin = exports.streamAdminEvents = exports.getServerDetail = exports.getOverview = exports.broadcastNotice = void 0;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const prisma_1 = require("../lib/prisma");
 const adminAudit_1 = require("../lib/adminAudit");
 const adminEvents_1 = require("../lib/adminEvents");
+const sockets_1 = require("../sockets");
 const prismaAny = prisma_1.prisma;
 const DELETED_USERNAME = "deleteduser";
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 const toLocalUploadPath = (url) => {
     if (!url || !url.startsWith("/uploads/")) {
         return null;
@@ -45,6 +46,23 @@ const getOrCreateDeletedUserId = async () => {
     });
     return created.id;
 };
+const broadcastNotice = async (req, res) => {
+    const title = typeof req.body.title === "string" ? req.body.title.trim() : "";
+    const body = typeof req.body.body === "string" ? req.body.body.trim() : "";
+    if (!title || !body) {
+        res.status(400).json({ message: "title and body are required" });
+        return;
+    }
+    const io = req.app.get("io");
+    io.emit("notice:broadcast", { title, body });
+    await (0, adminAudit_1.logAdminEvent)({
+        type: "NOTICE_BROADCAST",
+        summary: `Admin broadcast notice: "${title}"`,
+        actorUsername: "admin-tool"
+    });
+    res.json({ ok: true });
+};
+exports.broadcastNotice = broadcastNotice;
 const getOverview = async (_req, res) => {
     const [userCount, serverCount, messageCount, recentEvents, users, servers] = await Promise.all([
         prisma_1.prisma.user.count({ where: { isDeleted: false } }),
@@ -114,8 +132,21 @@ const getServerDetail = async (req, res) => {
             take: 20
         })
     ]);
+    const onlineIds = (0, sockets_1.getOnlineUserIds)();
+    const serverWithPresence = {
+        ...server,
+        members: server.members.map((m) => ({
+            ...m,
+            user: {
+                ...m.user,
+                status: onlineIds.has(m.user.id)
+                    ? (m.user.status === "OFFLINE" ? "ONLINE" : m.user.status)
+                    : "OFFLINE"
+            }
+        }))
+    };
     res.json({
-        server,
+        server: serverWithPresence,
         recentMessages,
         recentEvents
     });
@@ -152,7 +183,7 @@ const deleteUserAccountAsAdmin = async (req, res) => {
         return;
     }
     if (user.username === SYSTEM_USERNAME) {
-        res.status(400).json({ message: "The DiskChat system user cannot be deleted" });
+        res.status(400).json({ message: "The Windcord system user cannot be deleted" });
         return;
     }
     const deletedUserId = await getOrCreateDeletedUserId();

@@ -51,7 +51,7 @@ const FriendsPanel = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16, ease: "easeOut" }}
-          className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(6,8,12,0.74)] p-4 backdrop-blur-sm"
           onPointerDown={onBackdropPointerDown}
           onClick={onBackdropClick}
         >
@@ -60,7 +60,7 @@ const FriendsPanel = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.97 }}
             transition={{ duration: 0.24, ease: "easeOut" }}
-            className="w-full max-w-2xl rounded-lg bg-[#2b2d31] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.44)]"
+            className="wc-modal-card w-full max-w-3xl rounded-[24px] p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
@@ -70,12 +70,12 @@ const FriendsPanel = ({
 
             <form onSubmit={submit} className="mb-4 flex gap-2">
               <input
-                className="flex-1 rounded bg-[#1e1f22] px-3 py-2 text-sm"
+                className="flex-1 rounded-2xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5 text-sm outline-none transition focus:border-[rgba(124,153,255,0.3)] focus:bg-black/25"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Add friend by username"
               />
-              <button className="rounded bg-discord-blurple px-3 py-2 text-sm font-semibold text-white hover:-translate-y-[1px]">Send</button>
+              <button className="rounded-2xl px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-[1px]" style={{ background: "linear-gradient(180deg, var(--wc-accent-light), var(--wc-accent))", boxShadow: "0 12px 26px rgba(0,0,0,0.34)" }}>Send</button>
             </form>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -83,7 +83,7 @@ const FriendsPanel = ({
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-discord-muted">Pending</h3>
                 <div className="space-y-1">
                   {pending.map((request) => (
-                    <div key={request.id} className="flex items-center gap-2 rounded bg-[#1e1f22] px-2 py-2 text-sm">
+                    <div key={request.id} className="flex items-center gap-2 rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2.5 text-sm">
                       <StatusDot status={request.from.status} />
                       <button className="flex-1 truncate text-left hover:underline" onClick={() => onOpenProfile(request.from)}>
                         {request.from.nickname?.trim() || request.from.username}
@@ -100,12 +100,12 @@ const FriendsPanel = ({
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-discord-muted">All Friends</h3>
                 <div className="space-y-1">
                   {friends.map((friend) => (
-                    <div key={friend.id} className="flex items-center gap-2 rounded bg-[#1e1f22] px-2 py-2 text-sm">
+                    <div key={friend.id} className="flex items-center gap-2 rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2.5 text-sm">
                       <StatusDot status={friend.status} />
                       <button className="flex-1 truncate text-left hover:underline" onClick={() => onOpenProfile(friend)}>
                         {friend.nickname?.trim() || friend.username}
                       </button>
-                      <button className="text-xs text-[#00a8fc] hover:-translate-y-[1px]" onClick={() => void onStartDM(friend.id)}>Message</button>
+                      <button className="text-xs hover:-translate-y-[1px]" style={{ color: "var(--wc-link)" }} onClick={() => void onStartDM(friend.id)}>Message</button>
                       <button className="text-xs text-[#ed4245] hover:-translate-y-[1px]" onClick={() => void onRemoveFriend(friend.id)}>Remove</button>
                     </div>
                   ))}

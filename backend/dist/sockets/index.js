@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initSocket = void 0;
+exports.initSocket = exports.getOnlineUserIds = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const socket_io_1 = require("socket.io");
 const prisma_1 = require("../lib/prisma");
@@ -15,6 +15,9 @@ const normalizeOrigin = (value) => {
         return value.replace(/\/$/, "");
     }
 };
+const onlineUsers = new Map();
+const getOnlineUserIds = () => new Set(onlineUsers.keys());
+exports.getOnlineUserIds = getOnlineUserIds;
 const initSocket = (server) => {
     const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? "")
         .split(",")
@@ -34,7 +37,6 @@ const initSocket = (server) => {
             credentials: true
         }
     });
-    const onlineUsers = new Map();
     const resolveTypingTarget = (payload) => {
         if (typeof payload === "string") {
             return payload ? { id: payload, room: `channel:${payload}` } : null;

@@ -30,6 +30,7 @@ export type Channel = {
   name: string;
   type: ChannelType;
   readOnly?: boolean;
+  isAnnouncement?: boolean;
   order?: number;
   categoryId?: string | null;
   serverId: string;
@@ -75,14 +76,24 @@ export type ServerMember = {
   nickname?: string | null;
   nickColor?: string | null;
   role: "MEMBER" | "ADMIN";
+  permissions?: string; // JSON string
   createdAt?: string;
   user: User;
+};
+
+export type MemberPermissions = {
+  kickMembers: boolean;
+  banMembers: boolean;
+  manageChannels: boolean;
+  manageMessages: boolean;
 };
 
 export type Server = {
   id: string;
   name: string;
+  description?: string;
   iconUrl?: string | null;
+  bannerImageUrl?: string | null;
   ownerId: string;
   inviteCode: string;
   categories: ChannelCategory[];

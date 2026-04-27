@@ -96,11 +96,14 @@ export const createOrGetDM = async (req: Request, res: Response): Promise<void> 
 };
 
 const DM_MESSAGE_PAGE_SIZE = 50;
+const DM_MESSAGE_CONTEXT_BEFORE_COUNT = 20;
+const DM_MESSAGE_CONTEXT_AFTER_COUNT = DM_MESSAGE_PAGE_SIZE - DM_MESSAGE_CONTEXT_BEFORE_COUNT - 1;
 
 export const listDMMessages = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.id;
   const { dmChannelId } = req.params;
   const before = typeof req.query.before === "string" ? req.query.before : undefined;
+  const after = typeof req.query.after === "string" ? req.query.after : undefined;
 
   const channel = await prismaAny.dMChannel.findFirst({
     where: { id: dmChannelId, participants: { some: { id: userId } } },
@@ -114,24 +117,144 @@ export const listDMMessages = async (req: Request, res: Response): Promise<void>
   const beforeDate = before
     ? ((await prismaAny.dMMessage.findUnique({ where: { id: before }, select: { createdAt: true } }))?.createdAt as Date | undefined)
     : undefined;
+  const afterDate = after
+    ? ((await prismaAny.dMMessage.findUnique({ where: { id: after }, select: { createdAt: true } }))?.createdAt as Date | undefined)
+    : undefined;
 
   const messages = await prismaAny.dMMessage.findMany({
     where: {
       dmChannelId,
-      ...(beforeDate ? { createdAt: { lt: beforeDate } } : {})
+      ...(beforeDate ? { createdAt: { lt: beforeDate } } : {}),
+      ...(afterDate ? { createdAt: { gt: afterDate } } : {})
     },
     include: dmMessageDetailsInclude,
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: afterDate ? "asc" : "desc" },
     take: DM_MESSAGE_PAGE_SIZE
   });
 
-  const ordered = (messages as Array<{ createdAt: Date }>).reverse();
+  const ordered = afterDate ? messages : (messages as Array<{ createdAt: Date }>).reverse();
 
   const hasOlder = ordered.length > 0
     ? (await prismaAny.dMMessage.count({ where: { dmChannelId, createdAt: { lt: (ordered[0] as { createdAt: Date }).createdAt } } })) > 0
     : false;
+  const hasNewer = ordered.length > 0
+    ? (await prismaAny.dMMessage.count({ where: { dmChannelId, createdAt: { gt: (ordered[ordered.length - 1] as { createdAt: Date }).createdAt } } })) > 0
+    : false;
 
-  res.json({ messages: ordered, hasOlder });
+  res.json({ messages: ordered, hasOlder, hasNewer });
+};
+
+export const getDMMessageContext = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const { dmChannelId, messageId } = req.params;
+
+  const channel = await prismaAny.dMChannel.findFirst({
+    where: { id: dmChannelId, participants: { some: { id: userId } } },
+    select: { id: true }
+  });
+  if (!channel) {
+    res.status(404).json({ message: "DM channel not found" });
+    return;
+  }
+
+  const targetMessage = await prismaAny.dMMessage.findFirst({
+    where: {
+      id: messageId,
+      dmChannelId,
+      dmChannel: {
+        participants: {
+          some: { id: userId }
+        }
+      }
+    },
+    include: dmMessageDetailsInclude
+  });
+
+  if (!targetMessage) {
+    res.status(404).json({ message: "Message not found" });
+    return;
+  }
+
+  const beforeMessages = await prismaAny.dMMessage.findMany({
+    where: {
+      dmChannelId,
+      createdAt: { lt: targetMessage.createdAt }
+    },
+    include: dmMessageDetailsInclude,
+    orderBy: { createdAt: "desc" },
+    take: DM_MESSAGE_CONTEXT_BEFORE_COUNT
+  });
+
+  const afterMessages = await prismaAny.dMMessage.findMany({
+    where: {
+      dmChannelId,
+      createdAt: { gt: targetMessage.createdAt }
+    },
+    include: dmMessageDetailsInclude,
+    orderBy: { createdAt: "asc" },
+    take: DM_MESSAGE_CONTEXT_AFTER_COUNT
+  });
+
+  const messages = [...beforeMessages.reverse(), targetMessage, ...afterMessages];
+  const hasOlder = messages.length > 0
+    ? (await prismaAny.dMMessage.count({ where: { dmChannelId, createdAt: { lt: messages[0].createdAt } } })) > 0
+    : false;
+  const hasNewer = messages.length > 0
+    ? (await prismaAny.dMMessage.count({ where: { dmChannelId, createdAt: { gt: messages[messages.length - 1].createdAt } } })) > 0
+    : false;
+
+  res.json({ messages, hasOlder, hasNewer, focusMessageId: targetMessage.id });
+};
+
+export const searchDMMessages = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const { dmChannelId } = req.params;
+  const { q, page: pageStr, pageSize: pageSizeStr } = req.query as { q: string; page?: string; pageSize?: string };
+
+  if (!q || q.trim().length === 0) {
+    res.status(400).json({ message: "Search query is required" });
+    return;
+  }
+
+  const channel = await prismaAny.dMChannel.findFirst({
+    where: { id: dmChannelId, participants: { some: { id: userId } } },
+    select: { id: true }
+  });
+  if (!channel) {
+    res.status(404).json({ message: "DM channel not found" });
+    return;
+  }
+
+  const requestedPage = Math.max(1, parseInt(pageStr || "1", 10) || 1);
+  const pageSize = Math.min(Math.max(1, parseInt(pageSizeStr || "25", 10) || 25), 50);
+  const searchTerm = q.trim().toLowerCase();
+
+  try {
+    const messages = await prismaAny.dMMessage.findMany({
+      where: { dmChannelId },
+      include: dmMessageDetailsInclude,
+      orderBy: { createdAt: "desc" }
+    });
+
+    const filtered = messages
+      .filter((message: { content?: string | null }) => message.content && message.content.toLowerCase().includes(searchTerm));
+
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * pageSize;
+    const results = filtered
+      .slice(offset, offset + pageSize)
+      .map((message: { content?: string | null }) => ({
+        message,
+        highlightedText: message.content || ""
+      }));
+
+    res.json({ results, total, page, pageSize, totalPages });
+  } catch (error) {
+    console.error("DM search error:", error);
+    res.status(500).json({ message: "Search failed" });
+  }
 };
 
 export const createDMMessage = async (req: Request, res: Response): Promise<void> => {

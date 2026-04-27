@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteSelf = exports.removeFriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.sendFriendRequest = exports.listFriends = exports.updateSelf = exports.findUsers = void 0;
+exports.deleteSelf = exports.getUnreadCounts = exports.removeFriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.sendFriendRequest = exports.listFriends = exports.updateSelf = exports.findUsers = void 0;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const prisma_1 = require("../lib/prisma");
@@ -11,7 +11,7 @@ const adminAudit_1 = require("../lib/adminAudit");
 const prismaAny = prisma_1.prisma;
 const USERNAME_REGEX = /^[a-z0-9]{2,32}$/;
 const DELETED_USERNAME = "deleteduser";
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 const toLocalUploadPath = (url) => {
     if (!url || !url.startsWith("/uploads/")) {
         return null;
@@ -62,8 +62,13 @@ exports.findUsers = findUsers;
 const updateSelf = async (req, res) => {
     const userId = req.user.id;
     const { username, status, removeAvatar } = req.body;
-    const avatarUrl = req.file ? `/uploads/avatars/${req.file.filename}` : undefined;
+    const files = req.files;
+    const avatarFile = files?.["avatar"]?.[0];
+    const bannerImageFile = files?.["bannerImage"]?.[0];
+    const avatarUrl = avatarFile ? `/uploads/avatars/${avatarFile.filename}` : undefined;
+    const bannerImageUrl = bannerImageFile ? `/uploads/banners/${bannerImageFile.filename}` : undefined;
     const shouldRemoveAvatar = removeAvatar === "true";
+    const shouldRemoveBannerImage = req.body.removeBannerImage === "true";
     const normalizedUsername = typeof username === "string" ? username.trim() : undefined;
     if (normalizedUsername && !USERNAME_REGEX.test(normalizedUsername)) {
         res.status(400).json({ message: "Username must be 2-32 lowercase letters and numbers only" });
@@ -75,9 +80,10 @@ const updateSelf = async (req, res) => {
     }
     const existingUser = await prismaAny.user.findUnique({
         where: { id: userId },
-        select: { avatarUrl: true }
+        select: { avatarUrl: true, bannerImageUrl: true }
     });
     const nextAvatarUrl = avatarUrl ?? (shouldRemoveAvatar ? null : undefined);
+    const nextBannerImageUrl = bannerImageUrl ?? (shouldRemoveBannerImage ? null : undefined);
     const user = await prismaAny.user.update({
         where: { id: userId },
         data: {
@@ -86,12 +92,18 @@ const updateSelf = async (req, res) => {
             ...(status ? { status } : {}),
             ...(typeof req.body.aboutMe === "string" ? { aboutMe: req.body.aboutMe } : {}),
             ...(typeof req.body.customStatus === "string" ? { customStatus: req.body.customStatus } : {}),
-            ...(nextAvatarUrl !== undefined ? { avatarUrl: nextAvatarUrl } : {})
+            ...(typeof req.body.bannerColor === "string" ? { bannerColor: req.body.bannerColor || null } : {}),
+            ...(typeof req.body.accentColor === "string" ? { accentColor: req.body.accentColor || null } : {}),
+            ...(nextAvatarUrl !== undefined ? { avatarUrl: nextAvatarUrl } : {}),
+            ...(nextBannerImageUrl !== undefined ? { bannerImageUrl: nextBannerImageUrl } : {})
         },
-        select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true }
+        select: { id: true, username: true, nickname: true, avatarUrl: true, bannerImageUrl: true, status: true, aboutMe: true, customStatus: true, bannerColor: true, accentColor: true, createdAt: true }
     });
     if (existingUser?.avatarUrl && existingUser.avatarUrl !== user.avatarUrl) {
         deleteLocalFileIfExists(existingUser.avatarUrl);
+    }
+    if (existingUser?.bannerImageUrl && existingUser.bannerImageUrl !== user.bannerImageUrl) {
+        deleteLocalFileIfExists(existingUser.bannerImageUrl);
     }
     const io = req.app.get("io");
     io.emit("user:updated", {
@@ -99,9 +111,12 @@ const updateSelf = async (req, res) => {
         username: user.username,
         nickname: user.nickname,
         avatarUrl: user.avatarUrl,
+        bannerImageUrl: user.bannerImageUrl,
         status: user.status,
         aboutMe: user.aboutMe,
-        customStatus: user.customStatus
+        customStatus: user.customStatus,
+        bannerColor: user.bannerColor,
+        accentColor: user.accentColor
     });
     res.json({ user });
 };
@@ -114,18 +129,18 @@ const listFriends = async (req, res) => {
             OR: [{ fromId: userId }, { toId: userId }]
         },
         include: {
-            from: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
-            to: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } }
+            from: { select: { id: true, username: true, nickname: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+            to: { select: { id: true, username: true, nickname: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } }
         }
     });
-    const friends = accepted.map((f) => (f.fromId === userId ? f.to : f.from));
+    const friends = accepted.map((f) => ({ ...(f.fromId === userId ? f.to : f.from), friendsSince: f.createdAt }));
     const pending = await prismaAny.friendRequest.findMany({
         where: { toId: userId, status: "PENDING" },
-        include: { from: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
+        include: { from: { select: { id: true, username: true, nickname: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
     });
     const pendingOutgoing = await prismaAny.friendRequest.findMany({
         where: { fromId: userId, status: "PENDING" },
-        include: { to: { select: { id: true, username: true, nickname: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
+        include: { to: { select: { id: true, username: true, nickname: true, avatarUrl: true, bannerColor: true, bannerImageUrl: true, accentColor: true, status: true, aboutMe: true, customStatus: true, createdAt: true } } }
     });
     res.json({
         friends,
@@ -208,6 +223,123 @@ const removeFriend = async (req, res) => {
     res.json({ removed: true });
 };
 exports.removeFriend = removeFriend;
+const getUnreadCounts = async (req, res) => {
+    const userId = req.user.id;
+    const { channels = {}, dms = {} } = req.body;
+    // Return both total unread counts and mention counts
+    const channelUnread = {};
+    const channelMentions = {};
+    const dmUnread = {};
+    const dmMentions = {};
+    // Fetch current user's username for mention counting
+    const currentUser = await prisma_1.prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+    const currentUsername = currentUser?.username?.toLowerCase() ?? "";
+    const escapedUsername = currentUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const mentionRegex = new RegExp(`@${escapedUsername}(?![a-z0-9_])`, 'gi');
+    const everyoneRegex = /@everyone/g;
+    const hereRegex = /@here/g;
+    const channelIds = Object.keys(channels);
+    if (channelIds.length > 0) {
+        // Verify user membership for all requested channels at once
+        const accessible = await prisma_1.prisma.channel.findMany({
+            where: { id: { in: channelIds }, server: { members: { some: { userId } } } },
+            select: { id: true }
+        });
+        const accessibleIds = new Set(accessible.map((c) => c.id));
+        // Batch-fetch lastSeen message timestamps
+        const lastSeenIds = channelIds.filter(id => accessibleIds.has(id) && channels[id]).map(id => channels[id]);
+        const lastSeenMessages = lastSeenIds.length > 0
+            ? await prisma_1.prisma.message.findMany({ where: { id: { in: lastSeenIds } }, select: { id: true, createdAt: true } })
+            : [];
+        const createdAtById = new Map(lastSeenMessages.map((m) => [m.id, m.createdAt]));
+        for (const channelId of accessibleIds) {
+            const lastSeenId = channels[channelId];
+            if (!lastSeenId) {
+                channelUnread[channelId] = 0;
+                channelMentions[channelId] = 0;
+                continue;
+            }
+            const lastSeenAt = createdAtById.get(lastSeenId);
+            if (!lastSeenAt) {
+                channelUnread[channelId] = 0;
+                channelMentions[channelId] = 0;
+                continue;
+            }
+            // Fetch all unread messages
+            const messages = await prisma_1.prisma.message.findMany({
+                where: { channelId, createdAt: { gt: lastSeenAt } },
+                select: { content: true, authorId: true }
+            });
+            let totalUnread = 0;
+            let mentionCount = 0;
+            for (const msg of messages) {
+                // Count total unread (excluding own messages)
+                if (msg.authorId !== userId) {
+                    totalUnread++;
+                    // Count mentions in other users' messages
+                    const content = msg.content ?? "";
+                    const usernameMentions = (content.match(mentionRegex) || []).length;
+                    const everyoneMentions = (content.match(everyoneRegex) || []).length;
+                    const hereMentions = (content.match(hereRegex) || []).length;
+                    mentionCount += usernameMentions + everyoneMentions + hereMentions;
+                }
+            }
+            channelUnread[channelId] = totalUnread;
+            channelMentions[channelId] = mentionCount;
+        }
+    }
+    const dmIds = Object.keys(dms);
+    if (dmIds.length > 0) {
+        const accessibleDMs = await prismaAny.dMChannel.findMany({
+            where: { id: { in: dmIds }, participants: { some: { id: userId } } },
+            select: { id: true }
+        });
+        const accessibleDMIds = new Set(accessibleDMs.map(d => d.id));
+        const dmLastSeenIds = dmIds.filter(id => accessibleDMIds.has(id) && dms[id]).map(id => dms[id]);
+        const dmLastSeenMessages = dmLastSeenIds.length > 0
+            ? await prismaAny.dMMessage.findMany({ where: { id: { in: dmLastSeenIds } }, select: { id: true, createdAt: true } })
+            : [];
+        const dmCreatedAtById = new Map(dmLastSeenMessages.map(m => [m.id, m.createdAt]));
+        for (const dmId of accessibleDMIds) {
+            const lastSeenId = dms[dmId];
+            if (!lastSeenId) {
+                dmUnread[dmId] = 0;
+                dmMentions[dmId] = 0;
+                continue;
+            }
+            const lastSeenAt = dmCreatedAtById.get(lastSeenId);
+            if (!lastSeenAt) {
+                dmUnread[dmId] = 0;
+                dmMentions[dmId] = 0;
+                continue;
+            }
+            // Fetch all unread DM messages
+            const messages = await prismaAny.dMMessage.findMany({
+                where: { dmChannelId: dmId, createdAt: { gt: lastSeenAt } },
+                select: { content: true, authorId: true }
+            });
+            let totalUnread = 0;
+            let mentionCount = 0;
+            for (const msg of messages) {
+                if (msg.authorId !== userId) {
+                    totalUnread++;
+                    const content = msg.content ?? "";
+                    const usernameMentions = (content.match(mentionRegex) || []).length;
+                    mentionCount += usernameMentions;
+                }
+            }
+            dmUnread[dmId] = totalUnread;
+            dmMentions[dmId] = mentionCount;
+        }
+    }
+    res.json({
+        channels: channelUnread,
+        dms: dmUnread,
+        channelMentions,
+        dmMentions
+    });
+};
+exports.getUnreadCounts = getUnreadCounts;
 const deleteSelf = async (req, res) => {
     const userId = req.user.id;
     const user = await prismaAny.user.findUnique({ where: { id: userId }, select: { id: true, username: true, avatarUrl: true, isDeleted: true } });

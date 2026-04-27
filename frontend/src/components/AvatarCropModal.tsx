@@ -241,7 +241,7 @@ const AvatarCropModal = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.97 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="w-full max-w-lg rounded-lg bg-[#2b2d31] p-4"
+            className="wc-modal-card w-full max-w-lg rounded-[22px] p-5"
             onClick={(event) => event.stopPropagation()}
           >
         <div className="mb-3 flex items-center justify-between">
@@ -251,7 +251,7 @@ const AvatarCropModal = ({
           </button>
         </div>
 
-        <div className="relative w-full overflow-hidden rounded-lg bg-[#11131a]" style={{ height: aspect >= 2 ? 220 : 320 }}>
+        <div className="relative w-full overflow-hidden rounded-xl" style={{ height: aspect >= 2 ? 220 : 320, backgroundColor: "var(--wc-card-surface)" }}>
           <Cropper
             image={image}
             crop={crop}
@@ -283,12 +283,13 @@ const AvatarCropModal = ({
             Reset
           </button>
           <div className="flex gap-2">
-            <button type="button" className="rounded bg-[#3a3d45] px-3 py-1 text-sm font-semibold text-white" onClick={onClose}>
+            <button type="button" className="rounded-xl bg-white/[0.06] px-4 py-1.5 text-sm font-semibold text-discord-muted hover:bg-white/[0.08] hover:text-white" onClick={onClose}>
               Cancel
             </button>
             <button
               type="button"
-              className="rounded bg-discord-blurple px-3 py-1 text-sm font-semibold text-white disabled:opacity-60"
+              className="rounded-xl px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+              style={{ background: "linear-gradient(180deg, var(--wc-active-top), var(--wc-active-bottom))" }}
               onClick={() => void apply()}
               disabled={busy}
             >

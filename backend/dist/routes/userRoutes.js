@@ -15,5 +15,6 @@ router.post("/friends/accept/:requestId", userController_1.acceptFriendRequest);
 router.post("/friends/reject/:requestId", userController_1.rejectFriendRequest);
 router.delete("/friends/:friendId", userController_1.removeFriend);
 router.delete("/me", userController_1.deleteSelf);
-router.patch("/me", upload_1.uploadAvatar.single("avatar"), userController_1.updateSelf);
+router.patch("/me", upload_1.uploadUserProfile, userController_1.updateSelf);
+router.post("/me/unread-counts", userController_1.getUnreadCounts);
 exports.default = router;

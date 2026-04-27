@@ -269,8 +269,19 @@ export const getUnreadCounts = async (req: Request, res: Response): Promise<void
     dms?: Record<string, string>;
   };
 
-  const channelCounts: Record<string, number> = {};
-  const dmCounts: Record<string, number> = {};
+  // Return both total unread counts and mention counts
+  const channelUnread: Record<string, number> = {};
+  const channelMentions: Record<string, number> = {};
+  const dmUnread: Record<string, number> = {};
+  const dmMentions: Record<string, number> = {};
+
+  // Fetch current user's username for mention counting
+  const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+  const currentUsername = currentUser?.username?.toLowerCase() ?? "";
+  const escapedUsername = currentUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const mentionRegex = new RegExp(`@${escapedUsername}(?![a-z0-9_])`, 'gi');
+  const everyoneRegex = /@everyone/g;
+  const hereRegex = /@here/g;
 
   const channelIds = Object.keys(channels);
   if (channelIds.length > 0) {
@@ -290,10 +301,41 @@ export const getUnreadCounts = async (req: Request, res: Response): Promise<void
 
     for (const channelId of accessibleIds) {
       const lastSeenId = channels[channelId];
-      if (!lastSeenId) { channelCounts[channelId] = 0; continue; }
+      if (!lastSeenId) {
+        channelUnread[channelId] = 0;
+        channelMentions[channelId] = 0;
+        continue;
+      }
       const lastSeenAt = createdAtById.get(lastSeenId);
-      if (!lastSeenAt) { channelCounts[channelId] = 0; continue; }
-      channelCounts[channelId] = await prisma.message.count({ where: { channelId, createdAt: { gt: lastSeenAt } } });
+      if (!lastSeenAt) {
+        channelUnread[channelId] = 0;
+        channelMentions[channelId] = 0;
+        continue;
+      }
+
+      // Fetch all unread messages
+      const messages = await prisma.message.findMany({
+        where: { channelId, createdAt: { gt: lastSeenAt } },
+        select: { content: true, authorId: true }
+      });
+
+      let totalUnread = 0;
+      let mentionCount = 0;
+      for (const msg of messages) {
+        // Count total unread (excluding own messages)
+        if (msg.authorId !== userId) {
+          totalUnread++;
+
+          // Count mentions in other users' messages
+          const content = msg.content ?? "";
+          const usernameMentions = (content.match(mentionRegex) || []).length;
+          const everyoneMentions = (content.match(everyoneRegex) || []).length;
+          const hereMentions = (content.match(hereRegex) || []).length;
+          mentionCount += usernameMentions + everyoneMentions + hereMentions;
+        }
+      }
+      channelUnread[channelId] = totalUnread;
+      channelMentions[channelId] = mentionCount;
     }
   }
 
@@ -313,14 +355,45 @@ export const getUnreadCounts = async (req: Request, res: Response): Promise<void
 
     for (const dmId of accessibleDMIds) {
       const lastSeenId = dms[dmId];
-      if (!lastSeenId) { dmCounts[dmId] = 0; continue; }
+      if (!lastSeenId) {
+        dmUnread[dmId] = 0;
+        dmMentions[dmId] = 0;
+        continue;
+      }
       const lastSeenAt = dmCreatedAtById.get(lastSeenId);
-      if (!lastSeenAt) { dmCounts[dmId] = 0; continue; }
-      dmCounts[dmId] = await prismaAny.dMMessage.count({ where: { dmChannelId: dmId, createdAt: { gt: lastSeenAt } } });
+      if (!lastSeenAt) {
+        dmUnread[dmId] = 0;
+        dmMentions[dmId] = 0;
+        continue;
+      }
+
+      // Fetch all unread DM messages
+      const messages = await prismaAny.dMMessage.findMany({
+        where: { dmChannelId: dmId, createdAt: { gt: lastSeenAt } },
+        select: { content: true, authorId: true }
+      });
+
+      let totalUnread = 0;
+      let mentionCount = 0;
+      for (const msg of messages) {
+        if (msg.authorId !== userId) {
+          totalUnread++;
+          const content = msg.content ?? "";
+          const usernameMentions = (content.match(mentionRegex) || []).length;
+          mentionCount += usernameMentions;
+        }
+      }
+      dmUnread[dmId] = totalUnread;
+      dmMentions[dmId] = mentionCount;
     }
   }
 
-  res.json({ channels: channelCounts, dms: dmCounts });
+  res.json({
+    channels: channelUnread,
+    dms: dmUnread,
+    channelMentions,
+    dmMentions
+  });
 };
 
 export const deleteSelf = async (req: Request, res: Response): Promise<void> => {

@@ -4,6 +4,9 @@ import { BrowserRouter } from "react-router-dom";
 import "@fontsource-variable/noto-sans";
 import AppRouter from "./App";
 import "./index.css";
+import { applyStoredThemePreference } from "./lib/theme";
+
+applyStoredThemePreference();
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

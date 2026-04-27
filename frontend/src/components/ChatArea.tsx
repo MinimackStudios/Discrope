@@ -1,7 +1,6 @@
 import { Children, cloneElement, type ChangeEvent, Fragment, isValidElement, type MouseEvent, type ReactNode, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import emojiMartDataJson from "@emoji-mart/data/sets/15/native.json";
 import { motion, AnimatePresence } from "framer-motion";
 import { Download, Edit3, ExternalLink, File as FileIcon, FileAudio2, Paperclip, Pause, Play, Reply, Search, Smile, Trash2, Volume2, VolumeX, X, ZoomIn, ZoomOut } from "lucide-react";
@@ -19,18 +18,24 @@ type ChatMessage = Message | DMMessage;
 type Props = {
   me: User;
   mode: "SERVER" | "DM";
+  channelId?: string | null;
   channelName: string;
   messages: ChatMessage[];
   focusMessageId?: string | null;
+  focusMessageMode?: "unread" | "search" | null;
   typingUsers: string[];
   mentionMembers?: ServerMember[];
   channels?: Channel[];
   onOpenProfile: (user: User) => void;
   onChannelClick?: (channelId: string) => void;
   canModerateServerMessages: boolean;
+  canManageChannels: boolean;
   channelReadOnly?: boolean;
   onKickMember?: (memberId: string) => void;
   onBanMember?: (memberId: string) => void;
+  canKickMembers?: boolean;
+  canBanMembers?: boolean;
+  serverOwnerId?: string;
 };
 
 type MemberContextMenu = {
@@ -96,8 +101,9 @@ const MARKDOWN_SYNTAX_REGEX = /[`*_~\[\]()>#]|(?:^|\s)-\s|https?:\/\//;
 const VIRTUALIZATION_THRESHOLD = 0;
 const DEFAULT_MESSAGE_ROW_HEIGHT = 84;
 const VIRTUALIZATION_OVERSCAN_PX = 200;
+const FAST_HISTORY_JUMP_DURATION_MS = 150;
 const EMOJI_REGEX = /(?:[\u{1F1E6}-\u{1F1FF}]{1,2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)/gu;
-const EMOJI_AUTOCOMPLETE_LIMIT = 8;
+const EMOJI_AUTOCOMPLETE_LIMIT = 40;
 
 const REACTION_PICKER_HEIGHT = 404;
 const REACTION_PICKER_MARGIN = 12;
@@ -262,9 +268,24 @@ type InvitePreview = {
   server: {
     id: string;
     name: string;
+    description?: string;
     iconUrl?: string | null;
+    bannerImageUrl?: string | null;
+    createdAt: string;
     memberCount: number;
+    onlineCount: number;
+    offlineCount: number;
   };
+};
+
+const inviteEstablishedDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" });
+
+const formatInviteEstablishedDate = (value: string): string | null => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return `Est. ${inviteEstablishedDateFormatter.format(date)}`;
 };
 
 const invitePreviewCache = new Map<string, InvitePreview | null>();
@@ -527,6 +548,7 @@ const emojiOnlySizeClass = (count: number): string => {
 
 const InviteEmbed = ({ inviteCode }: { inviteCode: string }): JSX.Element | null => {
   const loadServers = useChatStore((s) => s.loadServers);
+  const servers = useChatStore((s) => s.servers);
   const [invite, setInvite] = useState<InvitePreview | null>(invitePreviewCache.get(inviteCode) ?? null);
   const [loading, setLoading] = useState(!invitePreviewCache.has(inviteCode));
   const [joinMessage, setJoinMessage] = useState<string | null>(null);
@@ -566,12 +588,31 @@ const InviteEmbed = ({ inviteCode }: { inviteCode: string }): JSX.Element | null
   }, [inviteCode]);
 
   if (loading) {
-    return <div className="mt-1.5 inline-flex rounded-md border border-[#3f4248] bg-[#2b2d31] px-2 py-1 text-[11px] text-discord-muted">Loading invite...</div>;
+    return (
+      <div className="mt-1.5 inline-flex items-center rounded-full border border-white/[0.06] bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-discord-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-sm">
+        Loading invite...
+      </div>
+    );
   }
 
   if (!invite) {
     return null;
   }
+
+  const alreadyJoined = servers.some((server) => server.id === invite.server.id);
+  const joined = alreadyJoined || joinMessage === "Joined";
+  const joinMessageClassName = joined ? "text-[#86efac]" : "text-[#ffb3b8]";
+  const establishedLabel = formatInviteEstablishedDate(invite.server.createdAt);
+  const inviteBannerUrl = resolveMediaUrl(invite.server.bannerImageUrl);
+  const inviteBannerStyle = inviteBannerUrl
+    ? {
+        backgroundImage: `linear-gradient(180deg, rgba(10,12,16,0.08), rgba(10,12,16,0.24)), url(${inviteBannerUrl})`,
+        backgroundPosition: "center",
+        backgroundSize: "cover"
+      }
+    : {
+        background: "linear-gradient(135deg, color-mix(in srgb, var(--wc-active-top) 72%, white 28%), var(--wc-active-bottom))"
+      };
 
   const acceptInvite = async (): Promise<void> => {
     if (joining) {
@@ -594,36 +635,50 @@ const InviteEmbed = ({ inviteCode }: { inviteCode: string }): JSX.Element | null
   };
 
   return (
-    <div className="mt-1.5 w-full max-w-[320px] rounded-md border border-[#3f4248] bg-[#2b2d31] p-2">
-      <div className="flex items-center gap-2">
+    <div className="wc-surface-card-strong mt-2 w-full max-w-[340px] overflow-hidden rounded-[22px] ring-1 ring-white/[0.08]">
+      <div className="h-16" style={inviteBannerStyle} />
+
+      <div className="relative px-4 pb-4 pt-0">
         <img
           src={resolveMediaUrl(invite.server.iconUrl) || DEFAULT_AVATAR_URL}
           alt={invite.server.name}
-          className="h-8 w-8 rounded-lg object-cover"
+          className="-mt-7 h-14 w-14 rounded-[18px] border-4 object-cover"
+          style={{ borderColor: "var(--wc-profile-cutout)" }}
         />
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-discord-muted">Invite</p>
-          <p className="truncate text-xs font-semibold text-white">{invite.server.name}</p>
-          <p className="text-[11px] text-discord-muted">{invite.server.memberCount} members</p>
+
+        <div className="mt-3 min-w-0">
+          <p className="truncate text-[18px] font-bold leading-6 text-white">{invite.server.name}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-discord-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-[#23a55a]" />
+              {invite.server.onlineCount} Online
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-[#80848e]" />
+              {invite.server.offlineCount} Offline
+            </span>
+          </div>
+          {establishedLabel ? <p className="mt-1 text-[11px] text-discord-muted">{establishedLabel}</p> : null}
+          {invite.server.description ? <p className="mt-3 text-[12px] leading-5 text-discord-muted">{invite.server.description}</p> : null}
         </div>
-        <div className="flex gap-1">
-          <a
-            href={`${import.meta.env.BASE_URL}invite/${invite.code}`}
-            className="rounded bg-[#3a3d45] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#4a4e57]"
-          >
-            Open
-          </a>
-          <button
-            type="button"
-            onClick={() => void acceptInvite()}
-            disabled={joining}
-            className="rounded bg-discord-blurple px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#4752c4] disabled:opacity-60"
-          >
-            {joining ? "Joining..." : "Accept"}
-          </button>
+
+        <div className="mt-4 flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => void acceptInvite()}
+          disabled={joining || joined}
+          className={`${joined ? "wc-secondary-button text-discord-muted" : "wc-accent-button text-white"} rounded-xl px-3 py-1.5 text-[11px] font-semibold disabled:opacity-60`}
+        >
+          {joined ? "Joined" : joining ? "Joining..." : "Join"}
+        </button>
         </div>
       </div>
-      {joinMessage ? <p className="mt-1 text-[11px] text-discord-muted">{joinMessage}</p> : null}
+
+      {joinMessage ? (
+        <p className={`border-t border-white/[0.04] px-3 py-2 text-[11px] font-medium ${joinMessageClassName}`}>
+          {joinMessage}
+        </p>
+      ) : null}
     </div>
   );
 };
@@ -790,11 +845,11 @@ const AudioAttachmentPlayer = ({ src, attachmentName, downloadUrl }: { src: stri
     <div className="mt-2 w-full max-w-[460px] rounded-lg border border-[#3a3e46] bg-[#1f2229] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
       <audio ref={audioRef} src={src} preload="metadata" />
       <div className="flex items-center gap-2">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded bg-[#dfe2ff] text-[#5865f2]">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded" style={{ backgroundColor: "var(--wc-audio-icon-bg)", color: "var(--wc-audio-icon-fg)" }}>
           <FileAudio2 size={18} />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-base leading-5 text-[#69a0ff]">{displayName}</p>
+          <p className="truncate text-base leading-5" style={{ color: "var(--wc-accent-light)" }}>{displayName}</p>
           {fileSizeLabel ? <p className="mt-0.5 text-xs text-[#949ba4]">{fileSizeLabel}</p> : null}
         </div>
       </div>
@@ -814,7 +869,7 @@ const AudioAttachmentPlayer = ({ src, attachmentName, downloadUrl }: { src: stri
           onClick={onProgressClick}
           className="relative h-2 min-w-0 flex-1 cursor-pointer rounded-full bg-[#535862]"
         >
-          <div className="absolute left-0 top-0 h-2 rounded-full bg-[#5865f2]" style={{ width: `${progress * 100}%` }} />
+          <div className="absolute left-0 top-0 h-2 rounded-full" style={{ width: `${progress * 100}%`, backgroundColor: "var(--wc-audio-progress-bg)" }} />
           <div
             className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#b5bac1]"
             style={{ left: `calc(${progress * 100}% - 5px)` }}
@@ -933,19 +988,18 @@ const VideoAttachmentPlayer = ({
   onMediaReady?: () => void;
 }): JSX.Element => {
   return (
-    <div className="mt-2 w-full max-w-[520px] rounded-md border border-[#3f4248] bg-[#2b2d31] p-2">
-      <video src={src} controls className="video-attachment-media max-h-80 w-full rounded-md" onLoadedMetadata={onMediaReady} />
-      <div className="mt-2 flex items-center justify-between gap-2">
+    <div className="mt-2 w-full max-w-[min(90vw,520px)] overflow-hidden rounded-xl" style={{ backgroundColor: "rgba(0, 0, 0, 0.28)", border: "1px solid rgba(255, 255, 255, 0.04)" }}>
+      <video src={src} controls className="video-attachment-media w-full" style={{ backgroundColor: "#000", maxHeight: "480px", objectFit: "contain" }} onLoadedMetadata={onMediaReady} />
+      <div className="flex items-center justify-between gap-2 px-3 py-2">
         <p className="truncate text-xs text-discord-muted">{attachmentName || "video"}</p>
-        <div className="flex items-center gap-1">
-          <a
-            href={downloadUrl}
-            download={attachmentName || "video"}
-            className="rounded bg-[#3a3d45] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#4a4e57]"
-          >
-            <span className="inline-flex items-center gap-1"><Download size={12} /> Download</span>
-          </a>
-        </div>
+        <a
+          href={downloadUrl}
+          download={attachmentName || "video"}
+          className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/[0.08]"
+          style={{ backgroundColor: "rgba(255, 255, 255, 0.04)" }}
+        >
+          <span className="inline-flex items-center gap-1"><Download size={12} /> Download</span>
+        </a>
       </div>
     </div>
   );
@@ -967,18 +1021,24 @@ const withSpoilerFilename = (file: File): File => {
 const ChatArea = ({
   me,
   mode,
+  channelId,
   channelName,
   messages,
   focusMessageId,
+  focusMessageMode = null,
   typingUsers,
   mentionMembers = [],
   channels = [],
   onChannelClick,
   onOpenProfile,
   canModerateServerMessages,
+  canManageChannels,
   channelReadOnly = false,
   onKickMember,
-  onBanMember
+  onBanMember,
+  canKickMembers,
+  canBanMembers,
+  serverOwnerId
 }: Props): JSX.Element => {
   const sendMessage = useChatStore((s) => s.sendMessage);
   const sendDMMessage = useChatStore((s) => s.sendDMMessage);
@@ -990,9 +1050,25 @@ const ChatArea = ({
   const toggleDMReaction = useChatStore((s) => s.toggleDMReaction);
   const activeChannelId = useChatStore((s) => s.activeChannelId);
   const activeDMId = useChatStore((s) => s.activeDMId);
+
+  // Check if current user can delete a message (accounts for owner protection)
+  const canDeleteMessage = (message: ChatMessage): boolean => {
+    if (message.authorId === me.id) return true;
+    if (mode === "DM") return false;
+    if (!canModerateServerMessages) return false;
+    // Don't allow deleting owner's messages unless you are the owner
+    if (serverOwnerId && message.authorId === serverOwnerId && me.id !== serverOwnerId) return false;
+    return true;
+  };
   const hasOlderMessages = useChatStore((s) => (mode === "DM" ? s.hasOlderDMMessages : s.hasOlderMessages));
+  const hasNewerMessages = useChatStore((s) => (mode === "SERVER" ? s.hasNewerMessages : s.hasNewerDMMessages));
   const loadingOlderMessages = useChatStore((s) => s.loadingOlderMessages);
+  const loadingNewerMessages = useChatStore((s) => s.loadingNewerMessages);
+  const loadMessages = useChatStore((s) => (mode === "SERVER" ? s.loadMessages : s.loadDMMessages));
   const loadOlderMessages = useChatStore((s) => (mode === "DM" ? s.loadOlderDMMessages : s.loadOlderMessages));
+  const loadNewerMessages = useChatStore((s) => (mode === "DM" ? s.loadNewerDMMessages : s.loadNewerMessages));
+  const openChannelMessage = useChatStore((s) => s.openChannelMessage);
+  const openDMMessage = useChatStore((s) => s.openDMMessage);
 
   const onToggleReaction = useCallback(
     (messageId: string, emoji: string, reactions?: { emoji: string; userId: string }[]) => {
@@ -1037,6 +1113,10 @@ const ChatArea = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composerPreviewRef = useRef<HTMLDivElement>(null);
+  const mentionMenuListRef = useRef<HTMLDivElement>(null);
+  const channelMenuListRef = useRef<HTMLDivElement>(null);
+  const composerEmojiMenuListRef = useRef<HTMLDivElement>(null);
+  const editEmojiMenuListRef = useRef<HTMLDivElement>(null);
   const [composerSel, setComposerSel] = useState<{ start: number; end: number } | null>(null);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
   const editPreviewRef = useRef<HTMLDivElement>(null);
@@ -1052,9 +1132,18 @@ const ChatArea = ({
   const prevFirstMessageIdRef = useRef<string | null>(null);
   const loadOlderMessagesRef = useRef(loadOlderMessages);
   loadOlderMessagesRef.current = loadOlderMessages;
+  const loadNewerMessagesRef = useRef(loadNewerMessages);
+  loadNewerMessagesRef.current = loadNewerMessages;
+  const hasNewerMessagesRef = useRef(hasNewerMessages);
+  hasNewerMessagesRef.current = hasNewerMessages;
+  const loadingNewerMessagesRef = useRef(loadingNewerMessages);
+  loadingNewerMessagesRef.current = loadingNewerMessages;
+  const historyNewerPagingRef = useRef(false);
   const scrollRafRef = useRef<number | null>(null);
+  const scrollAnimationFrameRef = useRef<number | null>(null);
   const replyJumpTimeoutRef = useRef<number | null>(null);
-  const pendingScrollRequestRef = useRef<{ messageId: string; behavior: ScrollBehavior; block: ScrollLogicalPosition } | null>(null);
+  const pendingScrollRequestRef = useRef<{ messageId: string; block: ScrollLogicalPosition; durationMs: number } | null>(null);
+  const pendingPresentJumpRef = useRef(false);
   const measuredMessageHeightsRef = useRef<Record<string, number>>({});
   const messageResizeObserversRef = useRef<Record<string, ResizeObserver>>({});
   // Stable per-message-ID ref callbacks so React never calls them with null/element on
@@ -1069,6 +1158,112 @@ const ChatArea = ({
   const imageViewportRef = useRef<HTMLDivElement>(null);
   const fullscreenImageRef = useRef<HTMLImageElement>(null);
   const imagePanStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const prevLastMessageIdRef = useRef<string | null>(null);
+
+  const scrollMenuItemIntoView = useCallback((container: HTMLDivElement | null, itemIndex: number): void => {
+    if (!container || itemIndex < 0) {
+      return;
+    }
+
+    const item = container.children.item(itemIndex);
+    if (!(item instanceof HTMLElement)) {
+      return;
+    }
+
+    const itemTop = item.offsetTop;
+    const itemBottom = itemTop + item.offsetHeight;
+    const viewTop = container.scrollTop;
+    const viewBottom = viewTop + container.clientHeight;
+
+    if (itemTop < viewTop) {
+      container.scrollTop = itemTop;
+      return;
+    }
+
+    if (itemBottom > viewBottom) {
+      container.scrollTop = itemBottom - container.clientHeight;
+    }
+  }, []);
+
+  const requestLoadNewerMessages = useCallback((): void => {
+    if (!hasNewerMessagesRef.current || historyNewerPagingRef.current) {
+      return;
+    }
+
+    stickToBottomRef.current = false;
+    historyNewerPagingRef.current = true;
+    void loadNewerMessagesRef.current().finally(() => {
+      window.requestAnimationFrame(() => {
+        if (!loadingNewerMessagesRef.current) {
+          historyNewerPagingRef.current = false;
+        }
+      });
+    });
+  }, []);
+
+  const stopScrollAnimation = useCallback((): void => {
+    if (scrollAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollAnimationFrameRef.current);
+      scrollAnimationFrameRef.current = null;
+    }
+  }, []);
+
+  const animateScrollTo = useCallback((targetTop: number, durationMs: number): boolean => {
+    const node = scrollRef.current;
+    if (!node) {
+      return false;
+    }
+
+    const maxTop = Math.max(0, node.scrollHeight - node.clientHeight);
+    const boundedTop = Math.min(Math.max(0, targetTop), maxTop);
+
+    stopScrollAnimation();
+    if (durationMs <= 0 || Math.abs(node.scrollTop - boundedTop) < 2) {
+      node.scrollTop = boundedTop;
+      lastScrollTopRef.current = boundedTop;
+      return true;
+    }
+
+    const startTop = node.scrollTop;
+    const delta = boundedTop - startTop;
+    const startedAt = performance.now();
+
+    const step = (timestamp: number): void => {
+      const progress = Math.min((timestamp - startedAt) / durationMs, 1);
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+      node.scrollTop = startTop + (delta * easedProgress);
+
+      if (progress < 1) {
+        scrollAnimationFrameRef.current = window.requestAnimationFrame(step);
+      } else {
+        scrollAnimationFrameRef.current = null;
+      }
+    };
+
+    scrollAnimationFrameRef.current = window.requestAnimationFrame(step);
+    return true;
+  }, [stopScrollAnimation]);
+
+  const centerMessageElement = useCallback((messageId: string, durationMs: number, block: ScrollLogicalPosition): boolean => {
+    const node = scrollRef.current;
+    if (!node) {
+      return false;
+    }
+
+    const element = document.getElementById(`message-${messageId}`) as HTMLElement | null;
+    if (!element) {
+      return false;
+    }
+
+    let targetTop = element.offsetTop;
+    if (block === "center") {
+      targetTop = element.offsetTop - (node.clientHeight / 2) + (element.offsetHeight / 2);
+    } else if (block === "end") {
+      targetTop = element.offsetTop + element.offsetHeight - node.clientHeight;
+    }
+
+    return animateScrollTo(targetTop, durationMs);
+  }, [animateScrollTo]);
 
   const getImagePanBounds = useCallback((zoomValue: number): { maxX: number; maxY: number } => {
     const viewport = imageViewportRef.current;
@@ -1208,10 +1403,21 @@ const ChatArea = ({
   const emojiQuery = emojiToken?.[1]?.toLowerCase() ?? null;
   const mentionCandidates = useMemo(() => {
     if (mode !== "SERVER" || !mentionToken) {
-      return [] as ServerMember[];
+      return [] as (ServerMember | { type: "special"; value: "everyone" | "here"; display: string })[];
     }
 
     const query = mentionQuery ?? "";
+    const results: (ServerMember | { type: "special"; value: "everyone" | "here"; display: string })[] = [];
+
+    // Add @everyone and @here if they match the query
+    if ("everyone".includes(query) || query === "") {
+      results.push({ type: "special", value: "everyone", display: "everyone" });
+    }
+    if ("here".includes(query) || query === "") {
+      results.push({ type: "special", value: "here", display: "here" });
+    }
+
+    // Add member candidates
     const filtered = mentionMembers.filter((member) => {
       if (member.user.isDeleted) {
         return false;
@@ -1221,7 +1427,7 @@ const ChatArea = ({
       return displayName.includes(query) || username.includes(query);
     });
 
-    return filtered.sort((a, b) => {
+    results.push(...filtered.sort((a, b) => {
       const aDisplay = (a.nickname || a.user.nickname || a.user.username).toLowerCase();
       const bDisplay = (b.nickname || b.user.nickname || b.user.username).toLowerCase();
       const aStarts = aDisplay.startsWith(query) || a.user.username.toLowerCase().startsWith(query);
@@ -1230,7 +1436,9 @@ const ChatArea = ({
         return aStarts ? -1 : 1;
       }
       return aDisplay.localeCompare(bDisplay);
-    });
+    }));
+
+    return results;
   }, [mentionMembers, mentionQuery, mentionToken, mode]);
 
   const emojiCandidates = useMemo(() => {
@@ -1264,7 +1472,7 @@ const ChatArea = ({
         }
         return a.name.localeCompare(b.name);
       })
-      .slice(0, EMOJI_AUTOCOMPLETE_LIMIT);
+        .slice(0, EMOJI_AUTOCOMPLETE_LIMIT);
   }, [emojiQuery]);
 
   const mentionMenuOpen = mode === "SERVER" && Boolean(mentionToken) && mentionCandidates.length > 0;
@@ -1281,12 +1489,15 @@ const ChatArea = ({
         const bStarts = b.name.toLowerCase().startsWith(query);
         if (aStarts !== bStarts) return aStarts ? -1 : 1;
         return a.name.localeCompare(b.name);
-      })
-      .slice(0, 8);
+      });
   }, [channels, channelQuery, channelToken, mode]);
   const channelMenuOpen = mode === "SERVER" && Boolean(channelToken) && channelCandidates.length > 0;
   const emojiMenuOpen = Boolean(emojiToken) && emojiCandidates.length > 0;
   const overlayMenuOpen = showPicker || reactionPickerFor !== null || mentionMenuOpen || emojiMenuOpen || channelMenuOpen;
+  const composerMatchMenuClass = "absolute bottom-14 left-4 right-4 z-40 overflow-hidden rounded-[22px] wc-popover";
+  const composerMatchMenuHeaderClass = "border-b border-white/[0.04] px-3.5 pb-2 pt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-discord-muted";
+  const composerMatchMenuListClass = "discord-scrollbar max-h-60 overflow-y-auto p-2";
+  const composerMatchMenuItemClass = "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left transition";
 
   const membersByUsername = useMemo(() => {
     const map = new Map<string, ServerMember>();
@@ -1346,6 +1557,28 @@ const ChatArea = ({
       if (!token) {
         continue;
       }
+      
+      // Handle @everyone - mention all members
+      if (token.toLowerCase() === "everyone") {
+        mentionMembers.forEach((member) => {
+          if (!member.user.isDeleted) {
+            ids.add(member.user.id);
+          }
+        });
+        continue;
+      }
+      
+      // Handle @here - mention online members only
+      if (token.toLowerCase() === "here") {
+        mentionMembers.forEach((member) => {
+          if (!member.user.isDeleted && member.user.status !== "OFFLINE" && member.user.status !== "INVISIBLE") {
+            ids.add(member.user.id);
+          }
+        });
+        continue;
+      }
+      
+      // Handle regular @username mentions
       const member = resolveMentionMember(token);
       if (member) {
         ids.add(member.user.id);
@@ -1381,21 +1614,37 @@ const ChatArea = ({
             }
 
             if (sigil === "@") {
-              const member = resolveMentionMember(token);
-              if (member) {
-                const display = member.nickname || member.user.nickname || member.user.username;
+              // Handle @everyone and @here with special styling
+              if (token.toLowerCase() === "everyone" || token.toLowerCase() === "here") {
+                const isEveryone = token.toLowerCase() === "everyone";
                 parts.push(
-                  <button
-                    key={`mention-${lineIndex}-${tokenStart}-${member.user.id}`}
-                    type="button"
-                    onClick={() => onOpenProfile(member.user)}
-                    className="mx-0.5 rounded-[3px] bg-[#3a4273] px-1 font-medium text-[#d7e1ff] hover:bg-[#5865f2] hover:text-white"
+                  <span
+                    key={`mention-${lineIndex}-${tokenStart}-special`}
+                    className="mx-0.5 rounded-[3px] bg-[#f0b232]/20 px-1 font-medium text-[#f0b232] hover:bg-[#f0b232]/30"
                   >
-                    @{display}
-                  </button>
+                    @{token}
+                  </span>
                 );
               } else {
-                parts.push(fullMatch);
+                const member = resolveMentionMember(token);
+                if (member) {
+                  const display = member.nickname || member.user.nickname || member.user.username;
+                  parts.push(
+                    <button
+                      key={`mention-${lineIndex}-${tokenStart}-${member.user.id}`}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onClick={() => onOpenProfile(member.user)}
+                      className="mx-0.5 rounded-[3px] px-1 font-medium hover:text-white" style={{ backgroundColor: "var(--wc-mention-bg)", color: "var(--wc-mention-text)" }} onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = "var(--wc-accent)"; }} onMouseLeave={(e) => { (e.target as HTMLElement).style.backgroundColor = "var(--wc-mention-bg)"; }}
+                    >
+                      @{display}
+                    </button>
+                  );
+                } else {
+                  parts.push(fullMatch);
+                }
               }
             } else {
               // sigil === "#"
@@ -1405,10 +1654,27 @@ const ChatArea = ({
                   <button
                     key={`chanmention-${lineIndex}-${tokenStart}-${channel.id}`}
                     type="button"
-                    onClick={() => onChannelClick?.(channel.id)}
-                    className="mx-0.5 rounded-[3px] bg-[#3a4273] px-1 font-medium text-[#d7e1ff] hover:bg-[#5865f2] hover:text-white"
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) {
+                        return;
+                      }
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void onChannelClick?.(channel.id);
+                    }}
+                    onClick={(event) => {
+                      if (event.detail !== 0) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                      }
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void onChannelClick?.(channel.id);
+                    }}
+                    className="mx-0.5 rounded-[3px] px-1 font-medium hover:text-white" style={{ backgroundColor: "var(--wc-mention-bg)", color: "var(--wc-mention-text)" }} onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = "var(--wc-accent)"; }} onMouseLeave={(e) => { (e.target as HTMLElement).style.backgroundColor = "var(--wc-mention-bg)"; }}
                   >
-                    #{channel.name}
+                    # {channel.name}
                   </button>
                 );
               } else {
@@ -1435,6 +1701,114 @@ const ChatArea = ({
     );
   };
 
+  const renderChannelMentionText = (text: string, keyPrefix: string, sizeClassName?: string): ReactNode[] => {
+    if (mode !== "SERVER" || channelsByName.size === 0 || !onChannelClick) {
+      return renderEmojiText(text, keyPrefix, sizeClassName);
+    }
+
+    const parts: ReactNode[] = [];
+    const regex = /(^|\s)#([a-zA-Z0-9_\-]{1,32})/g;
+    let lastIndex = 0;
+
+    for (const match of text.matchAll(regex)) {
+      const fullMatch = match[0] ?? "";
+      const leading = match[1] ?? "";
+      const token = match[2] ?? "";
+      const fullStart = match.index ?? 0;
+      const tokenStart = fullStart + leading.length;
+      const channel = channelsByName.get(token.toLowerCase());
+
+      if (!channel) {
+        continue;
+      }
+
+      if (fullStart > lastIndex) {
+        parts.push(...renderEmojiText(text.slice(lastIndex, fullStart), `${keyPrefix}-text-${fullStart}`, sizeClassName));
+      }
+
+      if (leading) {
+        parts.push(...renderEmojiText(leading, `${keyPrefix}-leading-${tokenStart}`, sizeClassName));
+      }
+
+      parts.push(
+        <button
+          key={`${keyPrefix}-channel-${channel.id}-${tokenStart}`}
+          type="button"
+          onPointerDown={(event) => {
+            if (event.button !== 0) {
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            void onChannelClick(channel.id);
+          }}
+          onClick={(event) => {
+            if (event.detail !== 0) {
+              event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            void onChannelClick(channel.id);
+          }}
+          className="mx-0.5 rounded-[3px] px-1 font-medium hover:text-white"
+          style={{ backgroundColor: "var(--wc-mention-bg)", color: "var(--wc-mention-text)" }}
+          onMouseEnter={(event) => {
+            event.currentTarget.style.backgroundColor = "var(--wc-accent)";
+          }}
+          onMouseLeave={(event) => {
+            event.currentTarget.style.backgroundColor = "var(--wc-mention-bg)";
+          }}
+        >
+          # {channel.name}
+        </button>
+      );
+
+      lastIndex = fullStart + fullMatch.length;
+    }
+
+    if (!parts.length) {
+      return renderEmojiText(text, keyPrefix, sizeClassName);
+    }
+
+    if (lastIndex < text.length) {
+      parts.push(...renderEmojiText(text.slice(lastIndex), `${keyPrefix}-tail-${lastIndex}`, sizeClassName));
+    }
+
+    return parts;
+  };
+
+  const renderMarkdownChildren = (children: ReactNode, keyPrefix: string, sizeClassName?: string): ReactNode => {
+    return Children.map(children, (child, index) => {
+      const childKey = `${keyPrefix}-${index}`;
+
+      if (typeof child === "string") {
+        return <Fragment key={childKey}>{renderChannelMentionText(child, childKey, sizeClassName)}</Fragment>;
+      }
+
+      if (!isValidElement(child)) {
+        return child;
+      }
+
+      const existingChildren = child.props.children as ReactNode;
+      if (existingChildren === undefined) {
+        return child;
+      }
+
+      const childType = typeof child.type === "string" ? child.type : null;
+      const nextChildren = childType === "a"
+        ? renderEmojiChildren(existingChildren, childKey, sizeClassName)
+        : renderMarkdownChildren(existingChildren, childKey, sizeClassName);
+
+      return cloneElement(child, {
+        ...child.props,
+        key: child.key ?? childKey,
+        children: nextChildren
+      });
+    });
+  };
+
   const renderMessageContent = (rawContent: string): JSX.Element => {
     const jumboEmoji = emojiOnlySegments(rawContent);
     if (jumboEmoji.length > 0) {
@@ -1448,11 +1822,14 @@ const ChatArea = ({
       );
     }
 
-    if (mode === "SERVER" && (/(^|\s)@([a-zA-Z0-9_]{1,32})/.test(rawContent) || (channels.length > 0 && /(^|\s)#([a-zA-Z0-9_\-]{1,32})/.test(rawContent)))) {
+    // Check for markdown syntax FIRST — if present, let ReactMarkdown handle it
+    // so headings, lists, code blocks, etc. render correctly.
+    // Channel mentions in markdown still render as clickable pills.
+    if (MARKDOWN_SYNTAX_REGEX.test(rawContent)) {
+      // Proceed to ReactMarkdown below
+    } else if (mode === "SERVER" && (/(^|\s)@([a-zA-Z0-9_]{1,32})/.test(rawContent) || (channels.length > 0 && /(^|\s)#([a-zA-Z0-9_\-]{1,32})/.test(rawContent)))) {
       return renderMentionPills(rawContent);
-    }
-
-    if (!MARKDOWN_SYNTAX_REGEX.test(rawContent)) {
+    } else {
       return <span className="whitespace-pre-wrap">{renderEmojiText(rawContent, "plain-message")}</span>;
     }
 
@@ -1466,19 +1843,89 @@ const ChatArea = ({
 
     return (
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks]}
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[]}
         components={{
+          // Headings
+          h1: ({ children }) => <h1 className="mt-4 mb-2 text-2xl font-bold text-white">{renderMarkdownChildren(children, "markdown-h1")}</h1>,
+          h2: ({ children }) => <h2 className="mt-3 mb-2 text-xl font-bold text-white">{renderMarkdownChildren(children, "markdown-h2")}</h2>,
+          h3: ({ children }) => <h3 className="mt-3 mb-1 text-lg font-bold text-white">{renderMarkdownChildren(children, "markdown-h3")}</h3>,
+          h4: ({ children }) => <h4 className="mt-2 mb-1 text-base font-bold text-white">{renderMarkdownChildren(children, "markdown-h4")}</h4>,
+          h5: ({ children }) => <h5 className="mt-2 mb-1 text-sm font-bold text-white">{renderMarkdownChildren(children, "markdown-h5")}</h5>,
+          h6: ({ children }) => <h6 className="mt-2 mb-1 text-sm font-bold text-discord-muted">{renderMarkdownChildren(children, "markdown-h6")}</h6>,
+
+          // Paragraphs
+          p: ({ children }) => <span className="block">{renderMarkdownChildren(children, "markdown-paragraph")}</span>,
+
+          // Text formatting
+          strong: ({ children }) => <strong className="font-bold">{renderMarkdownChildren(children, "markdown-strong")}</strong>,
+          em: ({ children }) => <em className="italic">{renderMarkdownChildren(children, "markdown-em")}</em>,
+          del: ({ children }) => <del className="line-through">{renderMarkdownChildren(children, "markdown-del")}</del>,
+
+          // Links
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="text-[#00a8fc] hover:underline">
+            <a href={href} target="_blank" rel="noreferrer noopener" className="hover:underline" style={{ color: "var(--wc-link)" }}>
               {renderEmojiChildren(children, "markdown-link")}
             </a>
           ),
-          p: ({ children }) => <span className="block">{renderEmojiChildren(children, "markdown-paragraph")}</span>,
-          strong: ({ children }) => <strong>{renderEmojiChildren(children, "markdown-strong")}</strong>,
-          em: ({ children }) => <em>{renderEmojiChildren(children, "markdown-em")}</em>,
-          del: ({ children }) => <del>{renderEmojiChildren(children, "markdown-del")}</del>,
-          li: ({ children }) => <li>{renderEmojiChildren(children, "markdown-li")}</li>,
-          blockquote: ({ children }) => <blockquote>{renderEmojiChildren(children, "markdown-blockquote")}</blockquote>
+
+          // Blockquotes
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-4 border-[#4f545c] bg-[#2f3136]/50 pl-3 py-1 my-2 rounded-r">
+              <div className="text-[#dcddde]">{renderMarkdownChildren(children, "markdown-blockquote")}</div>
+            </blockquote>
+          ),
+
+          // Lists
+          ul: ({ children }) => (
+            <ul className="list-disc pl-6 my-2 space-y-1">{renderMarkdownChildren(children, "markdown-ul")}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="list-decimal pl-6 my-2 space-y-1">{renderMarkdownChildren(children, "markdown-ol")}</ol>
+          ),
+          li: ({ children }) => (
+            <li className="pl-1">{renderMarkdownChildren(children, "markdown-li")}</li>
+          ),
+
+          // Tables
+          table: ({ children }) => (
+            <div className="my-3 overflow-x-auto rounded border border-[#202225]">
+              <table className="w-full border-collapse text-sm">
+                {children}
+              </table>
+            </div>
+          ),
+          thead: ({ children }) => (
+            <thead className="bg-[#2f3136]">{children}</thead>
+          ),
+          tbody: ({ children }) => (
+            <tbody className="divide-y divide-[#202225]">{children}</tbody>
+          ),
+          tr: ({ children }) => <tr className="border-b border-[#202225]">{children}</tr>,
+          th: ({ children }) => (
+            <th className="px-3 py-2 text-left font-semibold text-[#b9bbbe] border-r border-[#202225] last:border-r-0">
+              {renderMarkdownChildren(children, "markdown-th")}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="px-3 py-2 text-[#dcddde] border-r border-[#202225] last:border-r-0">
+              {renderMarkdownChildren(children, "markdown-td")}
+            </td>
+          ),
+
+          // Horizontal rule
+          hr: () => <hr className="my-3 border-[#4f545c]" />,
+
+          // Task lists (GFM)
+          input: ({ checked, ...props }) => (
+            <input
+              type="checkbox"
+              checked={checked || false}
+              readOnly
+              className="mr-1.5 h-4 w-4 accent-discord-blurple cursor-default"
+              {...props}
+            />
+          ),
         }}
       >
         {processedContent}
@@ -1528,15 +1975,15 @@ const ChatArea = ({
 
   const visibleMessages = messages.slice(visibleRange.start, visibleRange.end);
 
-  const scrollMessageIntoView = (messageId: string, behavior: ScrollBehavior, block: ScrollLogicalPosition): void => {
+  const scrollMessageIntoView = useCallback((messageId: string, block: ScrollLogicalPosition, durationMs = 0): boolean => {
     const node = scrollRef.current;
     if (!node) {
-      return;
+      return false;
     }
 
     const messageIndex = messages.findIndex((message) => message.id === messageId);
     if (messageIndex === -1) {
-      return;
+      return false;
     }
 
     const top = messageLayout.offsets[messageIndex] ?? 0;
@@ -1550,9 +1997,9 @@ const ChatArea = ({
       targetTop = bottom - node.clientHeight;
     }
 
-    pendingScrollRequestRef.current = { messageId, behavior, block };
-    node.scrollTo({ top: Math.max(0, targetTop), behavior });
-  };
+    pendingScrollRequestRef.current = { messageId, block, durationMs };
+    return animateScrollTo(targetTop, durationMs);
+  }, [animateScrollTo, messageLayout.offsets, messages]);
 
   // All three helpers only read/write refs and call the stable setState updater.
   // useCallback([]) makes their identities stable across renders, which is required
@@ -1562,7 +2009,7 @@ const ChatArea = ({
   }, []);
 
   const lockToBottomIfSticky = useCallback((): void => {
-    if (!initialScrollPositionedRef.current || !stickToBottomRef.current || pendingBottomLockFrameRef.current !== null) {
+    if (!initialScrollPositionedRef.current || !stickToBottomRef.current || historyNewerPagingRef.current || pendingBottomLockFrameRef.current !== null) {
       return;
     }
 
@@ -1574,6 +2021,20 @@ const ChatArea = ({
       scrollToBottom("auto");
     });
   }, [scrollToBottom]);
+
+  const jumpToPresent = useCallback((): void => {
+    const targetId = mode === "SERVER" ? activeChannelId : activeDMId;
+    if (!targetId) {
+      return;
+    }
+
+    stopScrollAnimation();
+    setHighlightMessageId(null);
+    pendingPresentJumpRef.current = true;
+    void loadMessages(targetId).catch(() => {
+      pendingPresentJumpRef.current = false;
+    });
+  }, [activeChannelId, activeDMId, loadMessages, mode, stopScrollAnimation]);
 
   const bindMessageNode = useCallback((messageId: string, node: HTMLElement | null): void => {
     const existingObserver = messageResizeObserversRef.current[messageId];
@@ -1632,6 +2093,7 @@ const ChatArea = ({
   };
 
   useEffect(() => {
+    stopScrollAnimation();
     initialScrollPositionedRef.current = false;
     consumedFocusMessageIdRef.current = null;
     previousMessageCountRef.current = 0;
@@ -1653,7 +2115,17 @@ const ChatArea = ({
     setScrollTop(0);
     setViewportHeight(0);
     setHeightVersion(0);
-  }, [mode, activeChannelId, activeDMId]);
+  }, [activeChannelId, activeDMId, mode, stopScrollAnimation]);
+
+  useEffect(() => () => {
+    stopScrollAnimation();
+  }, [stopScrollAnimation]);
+
+  useEffect(() => {
+    if (!focusMessageId) {
+      consumedFocusMessageIdRef.current = null;
+    }
+  }, [focusMessageId]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -1664,7 +2136,7 @@ const ChatArea = ({
     const updateScrollMetrics = (): void => {
       const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
       const scrollingUp = node.scrollTop < lastScrollTopRef.current;
-      if (distanceFromBottom <= 8) {
+      if (distanceFromBottom <= 8 && !historyNewerPagingRef.current) {
         // Being at the bottom always re-enables sticky (including browser-clamped scrolls from shrinking content).
         stickToBottomRef.current = true;
       } else if (scrollingUp) {
@@ -1677,6 +2149,10 @@ const ChatArea = ({
       if (initialScrollPositionedRef.current && node.scrollTop < 300) {
         prevScrollHeightRef.current = node.scrollHeight;
         void loadOlderMessagesRef.current();
+      }
+
+      if (initialScrollPositionedRef.current && hasNewerMessagesRef.current && distanceFromBottom < 300) {
+        requestLoadNewerMessages();
       }
 
       // Throttle React state updates (virtualization recalc) to one per animation frame.
@@ -1696,6 +2172,12 @@ const ChatArea = ({
     const onWheelIntent = (event: WheelEvent): void => {
       if (event.deltaY < 0) {
         stickToBottomRef.current = false;
+        return;
+      }
+
+      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+      if (initialScrollPositionedRef.current && hasNewerMessagesRef.current && distanceFromBottom < 300) {
+        requestLoadNewerMessages();
       }
     };
     resizeObserver.observe(node);
@@ -1710,7 +2192,7 @@ const ChatArea = ({
         scrollRafRef.current = null;
       }
     };
-  }, [mode, activeChannelId, activeDMId]);
+  }, [activeChannelId, activeDMId, mode, requestLoadNewerMessages]);
 
   useLayoutEffect(() => {
     if (!messages.length) {
@@ -1727,43 +2209,64 @@ const ChatArea = ({
     const previousCount = previousMessageCountRef.current;
     const messageCountIncreased = messages.length > previousCount;
     previousMessageCountRef.current = messages.length;
+    const currentLastId = messages[messages.length - 1]?.id ?? null;
 
     // Detect prepend (loading older messages) and restore scroll position
     const currentFirstId = messages[0]?.id ?? null;
+    const previousFirstId = prevFirstMessageIdRef.current;
+    const prependedMessages = previousFirstId !== null && currentFirstId !== previousFirstId;
+    const appendedMessages = prevLastMessageIdRef.current !== null && currentLastId !== prevLastMessageIdRef.current && !prependedMessages;
     if (
       initialScrollPositionedRef.current &&
-      prevFirstMessageIdRef.current !== null &&
-      currentFirstId !== prevFirstMessageIdRef.current &&
+      previousFirstId !== null &&
+      currentFirstId !== previousFirstId &&
       prevScrollHeightRef.current > 0
     ) {
+      const previousFirstIndex = messages.findIndex((message) => message.id === previousFirstId);
+      const prependedHeight = previousFirstIndex > 0 ? (messageLayout.offsets[previousFirstIndex] ?? 0) : 0;
       const heightAdded = node.scrollHeight - prevScrollHeightRef.current;
-      if (heightAdded > 0) {
+      if (prependedHeight > 0) {
+        node.scrollTop += prependedHeight;
+        lastScrollTopRef.current = node.scrollTop;
+      } else if (heightAdded > 0) {
         node.scrollTop += heightAdded;
         lastScrollTopRef.current = node.scrollTop;
       }
       prevScrollHeightRef.current = 0;
     }
     prevFirstMessageIdRef.current = currentFirstId;
+    prevLastMessageIdRef.current = currentLastId;
 
     const isInitialPosition = !initialScrollPositionedRef.current;
-    const defaultBehavior: ScrollBehavior = "auto";
-
-    const scrollBottom = (): void => {
-      node.scrollTo({ top: node.scrollHeight, behavior: defaultBehavior });
+    const scrollBottom = (durationMs = 0): void => {
+      animateScrollTo(node.scrollHeight, durationMs);
     };
 
+    if (pendingPresentJumpRef.current) {
+      pendingPresentJumpRef.current = false;
+      historyNewerPagingRef.current = false;
+      stickToBottomRef.current = true;
+      initialScrollPositionedRef.current = true;
+      scrollBottom(FAST_HISTORY_JUMP_DURATION_MS);
+      return;
+    }
+
     if (focusMessageId && consumedFocusMessageIdRef.current !== focusMessageId) {
+      const focusBlock: ScrollLogicalPosition = focusMessageMode === "search" ? "center" : "start";
+      const focusDurationMs = focusMessageMode === "search" ? FAST_HISTORY_JUMP_DURATION_MS : 220;
+
       const focusUnreadMessage = (attempt = 0): void => {
-        const element = document.getElementById(`message-${focusMessageId}`);
-        if (element) {
-          element.scrollIntoView({ behavior: defaultBehavior, block: "start" });
+        if (centerMessageElement(focusMessageId, focusDurationMs, focusBlock) || scrollMessageIntoView(focusMessageId, focusBlock, focusDurationMs)) {
           consumedFocusMessageIdRef.current = focusMessageId;
           initialScrollPositionedRef.current = true;
+          if (focusMessageMode === "search") {
+            setHighlightMessageId(focusMessageId);
+            window.setTimeout(() => setHighlightMessageId((current) => (current === focusMessageId ? null : current)), 2000);
+          }
           return;
         }
 
         if (attempt < 2) {
-          scrollMessageIntoView(focusMessageId, defaultBehavior, "start");
           window.requestAnimationFrame(() => focusUnreadMessage(attempt + 1));
           return;
         }
@@ -1796,6 +2299,11 @@ const ChatArea = ({
       return;
     }
 
+    if (!isInitialPosition && appendedMessages && historyNewerPagingRef.current) {
+      historyNewerPagingRef.current = false;
+      return;
+    }
+
     if (!isInitialPosition && !messageCountIncreased) {
       // Preserve bottom lock while attachment/image/video content finishes loading.
       scrollBottom();
@@ -1803,7 +2311,7 @@ const ChatArea = ({
     }
 
     scrollBottom();
-  }, [focusMessageId, heightVersion, messages, scrollMessageIntoView]);
+  }, [animateScrollTo, focusMessageId, focusMessageMode, heightVersion, messageLayout, messages, scrollMessageIntoView]);
 
   // Auto-focus input when channel/DM changes
   useEffect(() => {
@@ -1902,12 +2410,36 @@ const ChatArea = ({
   }, [mentionMenuOpen, mentionQuery]);
 
   useEffect(() => {
+    if (!mentionMenuOpen) {
+      return;
+    }
+    scrollMenuItemIntoView(mentionMenuListRef.current, highlightedMentionIndex);
+  }, [mentionMenuOpen, highlightedMentionIndex, mentionCandidates.length, scrollMenuItemIntoView]);
+
+  useEffect(() => {
     setHighlightedEmojiIndex(0);
   }, [emojiMenuOpen, emojiQuery]);
 
   useEffect(() => {
+    if (!emojiMenuOpen) {
+      return;
+    }
+    scrollMenuItemIntoView(
+      editingId ? editEmojiMenuListRef.current : composerEmojiMenuListRef.current,
+      highlightedEmojiIndex
+    );
+  }, [editingId, emojiMenuOpen, highlightedEmojiIndex, emojiCandidates.length, scrollMenuItemIntoView]);
+
+  useEffect(() => {
     setHighlightedChannelIndex(0);
   }, [channelMenuOpen, channelQuery]);
+
+  useEffect(() => {
+    if (!channelMenuOpen) {
+      return;
+    }
+    scrollMenuItemIntoView(channelMenuListRef.current, highlightedChannelIndex);
+  }, [channelMenuOpen, highlightedChannelIndex, channelCandidates.length, scrollMenuItemIntoView]);
 
   // Only load draft when the channel changes (activeDraftKey), not on every keystroke.
   // Including `drafts` in deps would re-clamp content on every char typed past the limit.
@@ -1969,8 +2501,15 @@ const ChatArea = ({
     event.target.value = "";
   };
 
-  const selectMention = (member: ServerMember): void => {
-    setContent((prev) => prev.replace(/(?:^|\s)@([a-zA-Z0-9_]*)$/, (full) => `${full.startsWith(" ") ? " " : ""}@${member.user.username} `));
+  const selectMention = (candidate: ServerMember | { type: "special"; value: "everyone" | "here"; display: string }): void => {
+    // Handle special @everyone/@here mentions
+    if ("type" in candidate && candidate.type === "special") {
+      setContent((prev) => prev.replace(/(?:^|\s)@([a-zA-Z0-9_]*)$/, (full) => `${full.startsWith(" ") ? " " : ""}@${candidate.value} `));
+    } else {
+      // Handle regular member mentions
+      const member = candidate as ServerMember;
+      setContent((prev) => prev.replace(/(?:^|\s)@([a-zA-Z0-9_]*)$/, (full) => `${full.startsWith(" ") ? " " : ""}@${member.user.username} `));
+    }
     setHighlightedMentionIndex(0);
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
@@ -2052,9 +2591,6 @@ const ChatArea = ({
     }
 
     sendInFlightRef.current = true;
-
-    // Sending a message implies intent to keep viewing the latest messages.
-    stickToBottomRef.current = true;
 
     if (draftKey) {
       setDrafts((prev) => {
@@ -2206,7 +2742,7 @@ const ChatArea = ({
           }}
           title={isSpoiler && !isRevealed ? "Reveal spoiler" : "View image fullscreen"}
         >
-          <div className="relative inline-block">
+          <div className="relative inline-block max-w-[min(90vw,560px)]">
             <ImageAttachmentPreview
               src={inlineAttachmentUrl}
               alt={displayName ?? "attachment"}
@@ -2258,47 +2794,37 @@ const ChatArea = ({
   };
 
   const jumpToMessage = (messageId: string): void => {
-    const centerMessageElement = (behavior: ScrollBehavior): boolean => {
-      const node = scrollRef.current;
-      if (!node) {
-        return false;
-      }
-
-      const element = document.getElementById(`message-${messageId}`) as HTMLElement | null;
-      if (!element) {
-        return false;
-      }
-
-      const targetTop = element.offsetTop - (node.clientHeight / 2) + (element.offsetHeight / 2);
-      const boundedTop = Math.max(0, targetTop);
-      node.scrollTo({ top: boundedTop, behavior });
-      return true;
-    };
+    const durationMs = FAST_HISTORY_JUMP_DURATION_MS;
 
     if (replyJumpTimeoutRef.current !== null) {
       window.clearTimeout(replyJumpTimeoutRef.current);
       replyJumpTimeoutRef.current = null;
     }
 
-    if (!centerMessageElement("auto")) {
-      scrollMessageIntoView(messageId, "auto", "center");
+    const centered = centerMessageElement(messageId, durationMs, "center") || scrollMessageIntoView(messageId, "center", durationMs);
+    if (!centered) {
+      if (mode === "SERVER" && activeChannelId) {
+        void openChannelMessage(activeChannelId, messageId);
+      } else if (mode === "DM" && activeDMId) {
+        void openDMMessage(activeDMId, messageId);
+      }
+      return;
     }
 
     let attempts = 0;
     const retryCenter = (): void => {
       attempts += 1;
-      const centered = centerMessageElement("auto");
-      if (centered || attempts >= 5) {
+      const recentered = centerMessageElement(messageId, durationMs, "center") || scrollMessageIntoView(messageId, "center", durationMs);
+      if (recentered || attempts >= 5) {
         replyJumpTimeoutRef.current = null;
         return;
       }
-      scrollMessageIntoView(messageId, "auto", "center");
       replyJumpTimeoutRef.current = window.setTimeout(retryCenter, 90);
     };
 
     replyJumpTimeoutRef.current = window.setTimeout(retryCenter, 90);
     setHighlightMessageId(messageId);
-    window.setTimeout(() => setHighlightMessageId((current) => (current === messageId ? null : current)), 1800);
+    window.setTimeout(() => setHighlightMessageId((current) => (current === messageId ? null : current)), 2000);
   };
 
   const openMemberContextMenu = (event: MouseEvent<HTMLElement>, message: Message | DMMessage): void => {
@@ -2325,7 +2851,7 @@ const ChatArea = ({
 
   return (
     <section
-      className="relative flex h-full min-w-0 flex-1 flex-col bg-discord-dark4"
+      className="wc-chat-surface relative flex h-full min-w-0 flex-1 flex-col"
       onDragEnter={(event) => {
         if (!hasAttachableFilesInEvent(event)) {
           return;
@@ -2373,14 +2899,16 @@ const ChatArea = ({
       }}
     >
       {dragActive ? (
-        <div className="pointer-events-none absolute inset-0 z-40 grid place-items-center bg-black/45">
-          <div className="rounded-lg border border-[#7f8699] bg-[#2b2d31] px-4 py-3 text-sm font-semibold text-white shadow-lg">
+        <div className="pointer-events-none absolute inset-0 z-40 grid place-items-center bg-black/45 backdrop-blur-[2px]">
+          <div className="wc-popover rounded-2xl px-4 py-3 text-sm font-semibold text-white">
             Drop file to attach
           </div>
         </div>
       ) : null}
-      <header className="flex h-12 items-center border-b border-black/30 px-4 text-sm font-semibold shadow-sm">
-        {mode === "SERVER" ? "#" : "@"} {channelName || "select-channel"}
+      <header className="wc-chat-header flex h-14 items-center justify-between px-5 text-sm font-semibold shadow-sm">
+        <span>
+          {mode === "SERVER" ? "#" : "@"} {channelName || "select-channel"}
+        </span>
       </header>
 
       <div ref={scrollRef} className="discord-scrollbar flex-1 overflow-y-auto px-3 py-4">
@@ -2423,7 +2951,7 @@ const ChatArea = ({
               stableRefsMap.current[message.id] = (n: HTMLElement | null) => bindMessageNode(message.id, n);
             }
             const messageRef = stableRefsMap.current[message.id]!;
-            const isFirstUnread = focusMessageId === message.id;
+            const isFirstUnread = focusMessageMode === "unread" && focusMessageId === message.id;
             return (
               <Fragment key={message.id}>
                 {isFirstUnread ? (
@@ -2439,10 +2967,12 @@ const ChatArea = ({
                 ref={messageRef}
                 key={message.id}
                 id={`message-${message.id}`}
+                className={`group relative mb-0 flex gap-3 rounded px-2 isolate ${groupedCompact ? "py-0.5" : "py-1"} ${overlayMenuOpen ? "" : mentionMe ? "hover:brightness-95" : "hover:bg-black/10"} ${highlightMessageId === message.id || isReplyTarget ? "rounded-lg" : ""} ${highlightMessageId === message.id ? "message-search-highlight" : ""}`}
+                style={mentionMe ? { backgroundColor: "var(--wc-mention-me-bg)" } : highlightMessageId === message.id ? { backgroundColor: "var(--wc-reply-highlight-bg)", boxShadow: `inset 0 0 0 1px var(--wc-highlight-ring)` } : isReplyTarget ? { backgroundColor: "var(--wc-reply-target-bg)", boxShadow: `inset 0 0 0 1px var(--wc-highlight-ring)` } : undefined}
                 onClick={() => {
                   if (message.pending) return;
                   if (!backspaceHeldRef.current) return;
-                  const canDelete = mine || (mode === "SERVER" && canModerateServerMessages);
+                  const canDelete = canDeleteMessage(message);
                   if (!canDelete) return;
                   if (mode === "DM" && activeDMId) {
                     void deleteDMMessage(activeDMId, message.id);
@@ -2459,11 +2989,8 @@ const ChatArea = ({
                     setReplyTo(message);
                   }
                 }}
-                className={`group relative mb-0.5 flex gap-3 rounded px-2 isolate ${groupedCompact ? "py-0.5" : "py-1"} ${overlayMenuOpen ? "" : mentionMe ? "hover:bg-[#3d3831]" : "hover:bg-black/10"} ${mentionMe ? "bg-[#413c35]" : ""} ${
-                  highlightMessageId === message.id || isReplyTarget ? "ring-1 ring-[#5865f2] bg-[#2d3244]/40" : ""
-                }`}
               >
-                {mentionMe ? <span className="pointer-events-none absolute bottom-0 left-0 top-0 w-0.5 rounded-l bg-[#f0b232]/85" /> : null}
+                {mentionMe ? <span className="pointer-events-none absolute bottom-0 left-0 top-0 w-0.5 rounded-l" style={{ backgroundColor: "var(--wc-highlight-edge)" }} /> : null}
                 {groupedCompact ? (
                   <span className={`invisible absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-discord-muted ${overlayMenuOpen ? "" : "group-hover:visible"}`}>
                     {new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
@@ -2569,11 +3096,11 @@ const ChatArea = ({
                           className={`emoji-hidden-text relative z-10 w-full resize-none overflow-hidden rounded bg-transparent px-2 pb-1.5 pt-[calc(0.375rem+3px)] text-sm whitespace-pre-wrap outline-none ${editingDraft ? "text-transparent caret-white" : "text-white"}`}
                         />
                         {emojiMenuOpen ? (
-                          <div className="absolute bottom-full left-0 right-0 z-40 mb-1 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg">
+                          <div className="absolute bottom-full left-0 right-0 z-40 mb-1 overflow-hidden rounded-md border border-white/[0.06] bg-[#111214] shadow-lg">
                             <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
                               Emojis matching :{emojiQuery}
                             </p>
-                            <div className="py-1">
+                            <div ref={editEmojiMenuListRef} className="discord-scrollbar max-h-60 overflow-y-auto py-1">
                               {emojiCandidates.map((emojiCandidate, index) => {
                                 const selected = index === highlightedEmojiIndex;
                                 return (
@@ -2649,7 +3176,10 @@ const ChatArea = ({
                             <button
                               key={`${message.id}-${emoji}`}
                               onClick={() => onToggleReaction(message.id, emoji, message.reactions)}
-                              className={`group/reaction relative inline-flex min-h-8 items-center justify-center rounded-full border px-2.5 py-1 text-xs leading-none transition-colors ${reactionState.reacted ? "border-[#5865f2] bg-[#3b4270] text-[#dfe5ff]" : "border-[#4a4d55] bg-[#2b2d31] text-[#dbdee1] hover:bg-[#35373c]"}`}
+                              className={`group/reaction relative inline-flex min-h-8 items-center justify-center rounded-full border px-2.5 py-1 text-xs leading-none transition-colors ${reactionState.reacted ? "" : "hover:bg-[var(--wc-reaction-idle-hover-bg)]"}`}
+                              style={reactionState.reacted
+                                ? { borderColor: "var(--wc-reaction-active-border)", backgroundColor: "var(--wc-reaction-active-bg)", color: "var(--wc-reaction-active-text)" }
+                                : { borderColor: "var(--wc-reaction-idle-border)", backgroundColor: "var(--wc-reaction-idle-bg)", color: "var(--wc-reaction-idle-text)" }}
                             >
                               <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-[#111214] px-2 py-1 text-[11px] font-medium text-white shadow-lg group-hover/reaction:block">
                                 {reactionState.users.join(", ")}
@@ -2667,12 +3197,12 @@ const ChatArea = ({
                 </div>
 
                 {editingId !== message.id ? (
-                  <div className={`pointer-events-none absolute right-2 top-1 z-10 flex h-fit items-center gap-0.5 rounded bg-[#111214] p-0.5 shadow-md transition-opacity ${overlayMenuOpen ? "opacity-0" : "opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"}`}>
+                  <div className={`pointer-events-none absolute -top-7 right-0 z-20 flex h-fit items-center gap-0.5 rounded bg-[#111214] p-0.5 shadow-md opacity-0 transition-opacity ${overlayMenuOpen ? "" : "group-hover:opacity-100"}`}>
                     {mode === "SERVER" ? (
                       <>
                         {!(channelReadOnly && !canModerateServerMessages) ? (
                           <button
-                            className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
+                            className="pointer-events-auto rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
                             title="Reply"
                             onClick={() => setReplyTo(message)}
                           >
@@ -2680,7 +3210,7 @@ const ChatArea = ({
                           </button>
                         ) : null}
                         <button
-                          className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
+                          className="pointer-events-auto rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
                           title="React"
                           data-reaction-picker-toggle="true"
                           onClick={(event) => toggleReactionPicker(message.id, event.currentTarget)}
@@ -2698,7 +3228,7 @@ const ChatArea = ({
                           <Reply size={14} />
                         </button>
                         <button
-                          className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
+                          className="pointer-events-auto rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
                           title="React"
                           data-reaction-picker-toggle="true"
                           onClick={(event) => toggleReactionPicker(message.id, event.currentTarget)}
@@ -2711,7 +3241,7 @@ const ChatArea = ({
                       <>
                         {mode === "SERVER" || mode === "DM" ? (
                           <button
-                            className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
+                            className="pointer-events-auto rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-white"
                             title="Edit"
                             onClick={() => {
                               setEditingId(message.id);
@@ -2722,7 +3252,7 @@ const ChatArea = ({
                           </button>
                         ) : null}
                         <button
-                          className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-red-300"
+                          className="pointer-events-auto rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-red-300"
                           title="Delete"
                           onClick={() => {
                             if (mode === "DM" && activeDMId) {
@@ -2735,9 +3265,9 @@ const ChatArea = ({
                           <Trash2 size={14} />
                         </button>
                       </>
-                    ) : (mode === "SERVER" && canModerateServerMessages) ? (
+                    ) : mode === "SERVER" && canDeleteMessage(message) ? (
                       <button
-                        className="rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-red-300"
+                        className="pointer-events-auto rounded p-1.5 text-discord-muted hover:bg-[#35373c] hover:text-red-300"
                         title="Delete"
                         onClick={() => void deleteMessage(message.id)}
                       >
@@ -2766,9 +3296,27 @@ const ChatArea = ({
           </div>
       </div>
 
-      <form onSubmit={onSubmit} className="relative p-3 pt-1.5">
+      {hasNewerMessages ? (
+        <div className="pointer-events-none absolute bottom-[5.6rem] left-1/2 z-30 flex w-full max-w-[28rem] -translate-x-1/2 px-4">
+          <div className="wc-popover pointer-events-auto flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-2.5">
+            <div className="min-w-0 flex-1">
+              <p className="whitespace-nowrap text-sm font-medium text-white">You're viewing older messages.</p>
+            </div>
+            <button
+              type="button"
+              onClick={jumpToPresent}
+              disabled={loadingNewerMessages}
+              className="shrink-0 rounded-xl bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Jump to present
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <form onSubmit={onSubmit} className="relative border-t border-white/[0.04] px-4 pb-4 pt-3">
         {channelReadOnly && !canModerateServerMessages ? (
-          <div className="rounded-lg border border-[#5a5e69] bg-[#4a4d57] px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+          <div className="wc-compose-box rounded-2xl px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
             <p className="cursor-default select-none py-[3px] text-sm text-discord-muted">This channel is read-only.</p>
           </div>
         ) : null}
@@ -2796,7 +3344,7 @@ const ChatArea = ({
         />
 
         {replyTo ? (
-          <div className="mb-1 flex items-center justify-between rounded bg-[#2b2d31] px-2 py-1 text-xs text-discord-muted">
+          <div className="mb-2 flex items-center justify-between rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2 text-xs text-discord-muted backdrop-blur-sm">
             <span className="truncate">
               Replying to {replyTo.author.nickname?.trim() || replyTo.author.username}
               {replyTo.attachmentUrl ? <span className="ml-2 inline-flex items-center gap-1"><Paperclip size={11} />Attachment</span> : null}
@@ -2807,10 +3355,10 @@ const ChatArea = ({
           </div>
         ) : null}
 
-        <div className={`rounded-lg border border-[#5a5e69] bg-[#4a4d57] px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition focus-within:border-[#7f8699] focus-within:shadow-[0_0_0_2px_rgba(127,134,153,0.25)] ${channelReadOnly && !canModerateServerMessages ? "hidden" : ""}`}>
+        <div className={`wc-compose-box rounded-[22px] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${channelReadOnly && !canModerateServerMessages ? "hidden" : ""}`}>
           {attachment ? (
-            <div className="mb-2 w-fit max-w-[280px] rounded-lg border border-white/10 bg-[#2b2d31] p-2">
-              <div className="relative overflow-hidden rounded-md border border-white/10 bg-[#1e1f22]">
+            <div className="mb-2 w-fit max-w-[280px] rounded-2xl border border-white/[0.06] bg-black/20 p-2">
+              <div className="relative overflow-hidden rounded-xl border border-white/[0.06] bg-[#171c26]">
                 {attachmentPreviewUrl && attachment.type.startsWith("image/") ? (
                   <img src={attachmentPreviewUrl} alt={attachment.name} className="max-h-52 w-full object-cover" />
                 ) : attachmentPreviewUrl && attachment.type.startsWith("video/") ? (
@@ -2847,7 +3395,7 @@ const ChatArea = ({
                     type="checkbox"
                     checked={attachmentSpoiler}
                     onChange={(event) => setAttachmentSpoiler(event.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-white/20 bg-[#1e1f22]"
+                    className="h-3.5 w-3.5 rounded border-white/[0.12] bg-[#1e1f22]"
                   />
                   Mark as spoiler
                 </label>
@@ -2873,7 +3421,7 @@ const ChatArea = ({
                           </>
                         : <>
                             {renderComposerText(content.slice(0, composerSel.start), "composer-input-l", "h-[1.25em] w-[1.25em]")}
-                            <span className="rounded-[2px] bg-[#5865f2]/40">{renderComposerText(content.slice(composerSel.start, composerSel.end), "composer-input-m", "h-[1.25em] w-[1.25em]")}</span>
+                            <span className="rounded-[2px]" style={{ backgroundColor: "color-mix(in srgb, var(--wc-accent) 40%, transparent)" }}>{renderComposerText(content.slice(composerSel.start, composerSel.end), "composer-input-m", "h-[1.25em] w-[1.25em]")}</span>
                             {renderComposerText(content.slice(composerSel.end), "composer-input-r", "h-[1.25em] w-[1.25em]")}
                           </>
                       : renderComposerText(content, "composer-input", "h-[1.25em] w-[1.25em]")}
@@ -3075,31 +3623,62 @@ const ChatArea = ({
           </div>
         ) : null}
         {mentionMenuOpen ? (
-          <div className="absolute bottom-14 left-4 right-4 z-40 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg">
-            <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
-              Members matching @{mentionQuery}
+          <div className={composerMatchMenuClass}>
+            <p className={composerMatchMenuHeaderClass}>
+              {mentionQuery ? `Mentions matching @${mentionQuery}` : "Mention someone"}
             </p>
-            <div className="py-1">
-              {mentionCandidates.slice(0, 8).map((member, index) => {
-                const display = member.nickname || member.user.nickname || member.user.username;
+            <div ref={mentionMenuListRef} className={composerMatchMenuListClass}>
+              {mentionCandidates.map((candidate, index) => {
                 const selected = index === highlightedMentionIndex;
+                
+                // Handle special @everyone/@here entries
+                if ("type" in candidate && candidate.type === "special") {
+                  return (
+                    <button
+                      key={candidate.value}
+                      type="button"
+                      className={`${composerMatchMenuItemClass} ${selected ? "bg-[var(--wc-surface-tint-strong)]" : "hover:bg-white/[0.05]"}`}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        selectMention(candidate as any);
+                      }}
+                    >
+                      <div className="flex h-6 w-6 items-center justify-center rounded-lg" style={{ backgroundColor: "var(--wc-mention-bg)", color: "var(--wc-mention-text)" }}>
+                        <span className="text-xs font-semibold">@</span>
+                      </div>
+                      <div className="min-w-0 flex flex-1 items-center gap-2">
+                        <div className="truncate text-[13px] font-medium text-white">@{candidate.display}</div>
+                        <div className="truncate text-[11px] text-discord-muted">
+                          {candidate.value === "everyone" ? "Notifies all members" : "Notifies online members"}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                }
+
+                // Handle regular member entries
+                const member = candidate as ServerMember;
+                const display = member.nickname || member.user.nickname || member.user.username;
                 return (
                   <button
                     key={member.userId}
                     type="button"
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left ${selected ? "bg-[#3a3d45]" : "hover:bg-[#2b2d31]"}`}
+                    className={`${composerMatchMenuItemClass} ${selected ? "bg-[var(--wc-surface-tint-strong)]" : "hover:bg-white/[0.05]"}`}
                     onMouseDown={(event) => {
                       event.preventDefault();
                       selectMention(member);
                     }}
                   >
-                    <div className="relative h-8 w-8 shrink-0">
-                      <img src={resolveUserAvatarUrl(member.user)} alt={display} className="h-8 w-8 rounded-full" />
+                    <div className="relative h-7 w-7 shrink-0">
+                      <img src={resolveUserAvatarUrl(member.user)} alt={display} className="h-7 w-7 rounded-full" />
                       <span className="absolute -bottom-1 -right-0.5">
-                        <StatusDot status={member.user.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#111214]" />
+                        <StatusDot status={member.user.status} sizeClassName="h-2 w-2" cutoutColor="var(--wc-profile-cutout)" ringColor="var(--wc-profile-cutout)" ringWidth={2} />
                       </span>
                     </div>
-                    <span className="truncate text-sm text-white">{display}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-medium text-white">{display}</div>
+                      <div className="mt-0.5 truncate text-[11px] text-discord-muted">@{member.user.username}</div>
+                    </div>
                   </button>
                 );
               })}
@@ -3108,25 +3687,30 @@ const ChatArea = ({
         ) : null}
 
         {channelMenuOpen ? (
-          <div className="absolute bottom-14 left-4 right-4 z-40 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg">
-            <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
+          <div className={composerMatchMenuClass}>
+            <p className={composerMatchMenuHeaderClass}>
               Channels matching #{channelQuery}
             </p>
-            <div className="py-1">
+            <div ref={channelMenuListRef} className={composerMatchMenuListClass}>
               {channelCandidates.map((channel, index) => {
                 const selected = index === highlightedChannelIndex;
                 return (
                   <button
                     key={channel.id}
                     type="button"
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left ${selected ? "bg-[#3a3d45]" : "hover:bg-[#2b2d31]"}`}
+                    className={`${composerMatchMenuItemClass} ${selected ? "bg-[var(--wc-surface-tint-strong)]" : "hover:bg-white/[0.05]"}`}
                     onMouseDown={(event) => {
                       event.preventDefault();
                       selectChannel(channel);
                     }}
                   >
-                    <span className="shrink-0 text-discord-muted">#</span>
-                    <span className="truncate text-sm text-white">{channel.name}</span>
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.04] text-[13px] font-semibold text-discord-muted">
+                      #
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-medium text-white">{channel.name}</div>
+                      <div className="mt-0.5 text-[11px] text-discord-muted">Insert channel mention</div>
+                    </div>
                   </button>
                 );
               })}
@@ -3135,25 +3719,30 @@ const ChatArea = ({
         ) : null}
 
         {emojiMenuOpen && !editingId ? (
-          <div className="absolute bottom-14 left-4 right-4 z-40 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg">
-            <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
+          <div className={composerMatchMenuClass}>
+            <p className={composerMatchMenuHeaderClass}>
               Emojis matching :{emojiQuery}
             </p>
-            <div className="py-1">
+            <div ref={composerEmojiMenuListRef} className={composerMatchMenuListClass}>
               {emojiCandidates.map((emojiCandidate, index) => {
                 const selected = index === highlightedEmojiIndex;
                 return (
                   <button
                     key={emojiCandidate.unified}
                     type="button"
-                    className={`flex w-full items-center gap-3 px-3 py-2 text-left ${selected ? "bg-[#3a3d45]" : "hover:bg-[#2b2d31]"}`}
+                    className={`${composerMatchMenuItemClass} ${selected ? "bg-[var(--wc-surface-tint-strong)]" : "hover:bg-white/[0.05]"}`}
                     onMouseDown={(event) => {
                       event.preventDefault();
                       selectEmoji(emojiCandidate);
                     }}
                   >
-                    <EmojiGlyph emoji={emojiCandidate.emoji} sizeClassName="h-6 w-6" />
-                    <span className="truncate text-sm text-white">:{emojiCandidate.name}:</span>
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.04]">
+                      <EmojiGlyph emoji={emojiCandidate.emoji} sizeClassName="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-medium text-white">:{emojiCandidate.name}:</div>
+                      <div className="mt-0.5 text-[11px] text-discord-muted">Insert emoji</div>
+                    </div>
                   </button>
                 );
               })}
@@ -3182,7 +3771,7 @@ const ChatArea = ({
 
       {memberContextMenu ? (
         <div
-          className="fixed z-50 w-44 overflow-hidden rounded-md border border-white/10 bg-[#111214] shadow-lg"
+          className="fixed z-50 w-44 overflow-hidden rounded-md border border-white/[0.06] bg-[#111214] shadow-lg"
           style={{ top: memberContextMenu.y, left: memberContextMenu.x }}
           onClick={(event) => event.stopPropagation()}
         >
@@ -3195,26 +3784,30 @@ const ChatArea = ({
           >
             View Profile
           </button>
-          {canModerateServerMessages && memberContextMenu.member.id !== me.id && memberContextMenu.member.username !== SYSTEM_USERNAME ? (
+          {(canKickMembers || canBanMembers) && memberContextMenu.member.id !== me.id && memberContextMenu.member.username !== SYSTEM_USERNAME ? (
             <>
-              <button
-                className="w-full px-3 py-2 text-left text-sm text-[#f0b232] hover:bg-[#2b2d31]"
-                onClick={() => {
-                  onKickMember?.(memberContextMenu.member.id);
-                  setMemberContextMenu(null);
-                }}
-              >
-                Kick Member
-              </button>
-              <button
-                className="w-full px-3 py-2 text-left text-sm text-[#ed4245] hover:bg-[#2b2d31]"
-                onClick={() => {
-                  onBanMember?.(memberContextMenu.member.id);
-                  setMemberContextMenu(null);
-                }}
-              >
-                Ban Member
-              </button>
+              {canKickMembers ? (
+                <button
+                  className="w-full px-3 py-2 text-left text-sm text-[#f0b232] hover:bg-[#2b2d31]"
+                  onClick={() => {
+                    onKickMember?.(memberContextMenu.member.id);
+                    setMemberContextMenu(null);
+                  }}
+                >
+                  Kick Member
+                </button>
+              ) : null}
+              {canBanMembers ? (
+                <button
+                  className="w-full px-3 py-2 text-left text-sm text-[#ed4245] hover:bg-[#2b2d31]"
+                  onClick={() => {
+                    onBanMember?.(memberContextMenu.member.id);
+                    setMemberContextMenu(null);
+                  }}
+                >
+                  Ban Member
+                </button>
+              ) : null}
             </>
           ) : null}
         </div>
@@ -3226,7 +3819,7 @@ const ChatArea = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[90] bg-black/90"
+            className="fixed inset-0 z-[90] backdrop-blur-xl" style={{ backgroundColor: "rgba(0, 0, 0, 0.88)" }}
             onClick={() => setFullscreenImage(null)}
           >
               <div className="absolute left-4 right-4 top-4 z-10 flex items-center justify-between gap-2" onClick={(event) => event.stopPropagation()}>
@@ -3234,7 +3827,7 @@ const ChatArea = ({
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  className="rounded bg-[#2b2d31] p-2 text-white hover:bg-[#3a3d45]"
+                  className="rounded p-2 text-white backdrop-blur-sm" style={{ backgroundColor: "rgba(43, 45, 49, 0.85)", border: "1px solid rgba(255, 255, 255, 0.06)" }}
                   onClick={(event) => {
                     event.stopPropagation();
                       setImageZoom((current) => {
@@ -3249,7 +3842,7 @@ const ChatArea = ({
                 </button>
                 <button
                   type="button"
-                  className="rounded bg-[#2b2d31] p-2 text-white hover:bg-[#3a3d45]"
+                  className="rounded p-2 text-white backdrop-blur-sm" style={{ backgroundColor: "rgba(43, 45, 49, 0.85)", border: "1px solid rgba(255, 255, 255, 0.06)" }}
                   onClick={(event) => {
                     event.stopPropagation();
                     setImageZoom(1);
@@ -3261,7 +3854,7 @@ const ChatArea = ({
                 </button>
                 <button
                   type="button"
-                  className="rounded bg-[#2b2d31] p-2 text-white hover:bg-[#3a3d45]"
+                  className="rounded p-2 text-white backdrop-blur-sm" style={{ backgroundColor: "rgba(43, 45, 49, 0.85)", border: "1px solid rgba(255, 255, 255, 0.06)" }}
                   onClick={(event) => {
                     event.stopPropagation();
                     setImageZoom((current) => {
@@ -3278,7 +3871,7 @@ const ChatArea = ({
                   href={fullscreenImage.src}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded bg-[#2b2d31] p-2 text-white hover:bg-[#3a3d45]"
+                  className="rounded p-2 text-white backdrop-blur-sm" style={{ backgroundColor: "rgba(43, 45, 49, 0.85)", border: "1px solid rgba(255, 255, 255, 0.06)" }}
                   onClick={(event) => event.stopPropagation()}
                   title="Open direct URL"
                 >
@@ -3286,7 +3879,7 @@ const ChatArea = ({
                 </a>
                 <button
                   type="button"
-                  className="rounded bg-[#2b2d31] p-2 text-white hover:bg-[#3a3d45]"
+                  className="rounded p-2 text-white backdrop-blur-sm" style={{ backgroundColor: "rgba(43, 45, 49, 0.85)", border: "1px solid rgba(255, 255, 255, 0.06)" }}
                   onClick={(event) => {
                     event.stopPropagation();
                     setFullscreenImage(null);

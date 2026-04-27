@@ -71,88 +71,92 @@ const DiscordEmojiPicker = ({ onEmojiClick, variant = "composer" }: Props): JSX.
   const bodyWidth = variant === "composer" ? 372 : 336;
 
   return (
-    <div className={`discord-emoji-picker rounded-xl border border-[#1f2125] bg-[#313338] p-2 shadow-[0_18px_48px_rgba(0,0,0,0.4)] discord-emoji-picker--${variant}`}>
-      <div className="mb-2 flex rounded-md bg-[#232428] p-1">
-        <button
-          type="button"
-          onClick={() => setSection("emoji")}
-          className={`flex-1 rounded px-2 py-1 text-xs font-semibold ${section === "emoji" ? "bg-[#3a3d45] text-white" : "text-discord-muted hover:text-white"}`}
-        >
-          Standard
-        </button>
-        <button
-          type="button"
-          onClick={() => setSection("regional")}
-          className={`flex-1 rounded px-2 py-1 text-xs font-semibold ${section === "regional" ? "bg-[#3a3d45] text-white" : "text-discord-muted hover:text-white"}`}
-        >
-          Extra
-        </button>
+    <div className={`wc-modal-card overflow-hidden rounded-[22px] discord-emoji-picker discord-emoji-picker--${variant}`}>
+      <div className="border-b border-white/[0.03] p-3">
+        <div className="flex rounded-xl bg-black/20 p-1">
+          <button
+            type="button"
+            onClick={() => setSection("emoji")}
+            className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${section === "emoji" ? "bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] text-white" : "text-discord-muted hover:bg-white/[0.05] hover:text-white"}`}
+          >
+            Standard
+          </button>
+          <button
+            type="button"
+            onClick={() => setSection("regional")}
+            className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${section === "regional" ? "bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] text-white" : "text-discord-muted hover:bg-white/[0.05] hover:text-white"}`}
+          >
+            Extra
+          </button>
+        </div>
       </div>
 
-      {section === "regional" ? (
-        <div className="overflow-y-auto rounded-md border border-[#232428] bg-[#1e1f22] p-2" style={{ height: bodyHeight, width: bodyWidth }}>
-          <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Regional Indicators</p>
-          <div className="grid grid-cols-8 gap-1.5">
-            {REGIONAL_INDICATOR_BUTTONS.map(({ letter, emoji }) => (
-              <button
-                key={letter}
-                type="button"
-                onClick={(e) => onEmojiClick(emoji, e.shiftKey)}
-                className="grid h-9 w-9 place-items-center rounded bg-[#2b2d31] hover:bg-[#3a3d45]"
-                title={`regional_indicator_${letter.toLowerCase()}`}
-                aria-label={`Regional indicator ${letter}`}
-              >
-                <img
-                  src={`${REGIONAL_INDICATOR_TWEMOJI_BASE}${toEmojiUnified(emoji)}.svg`}
-                  alt={emoji}
-                  draggable={false}
-                  className="h-5 w-5"
-                />
-              </button>
-            ))}
+      <div className="p-2">
+        {section === "regional" ? (
+          <div className="overflow-y-auto rounded-xl p-2" style={{ height: bodyHeight - 60, width: bodyWidth, backgroundColor: "rgba(0, 0, 0, 0.18)" }}>
+            <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Regional Indicators</p>
+            <div className="grid grid-cols-8 gap-1.5">
+              {REGIONAL_INDICATOR_BUTTONS.map(({ letter, emoji }) => (
+                <button
+                  key={letter}
+                  type="button"
+                  onClick={(e) => onEmojiClick(emoji, e.shiftKey)}
+                  className="grid h-9 w-9 place-items-center rounded-lg bg-black/20 transition hover:bg-white/[0.06]"
+                  title={`regional_indicator_${letter.toLowerCase()}`}
+                  aria-label={`Regional indicator ${letter}`}
+                >
+                  <img
+                    src={`${REGIONAL_INDICATOR_TWEMOJI_BASE}${toEmojiUnified(emoji)}.svg`}
+                    alt={emoji}
+                    draggable={false}
+                    className="h-5 w-5"
+                  />
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Numbers & Symbols</p>
+            <div className="grid grid-cols-8 gap-1.5">
+              {KEYCAP_BUTTONS.map(({ char, emoji }) => (
+                <button
+                  key={char}
+                  type="button"
+                  onClick={(e) => onEmojiClick(emoji, e.shiftKey)}
+                  className="grid h-9 w-9 place-items-center rounded-lg bg-black/20 transition hover:bg-white/[0.06]"
+                  title={`keycap_${char}`}
+                  aria-label={`Keycap ${char}`}
+                >
+                  <img
+                    src={`${REGIONAL_INDICATOR_TWEMOJI_BASE}${toEmojiUnified(emoji)}.svg`}
+                    alt={emoji}
+                    draggable={false}
+                    className="h-5 w-5"
+                  />
+                </button>
+              ))}
+            </div>
           </div>
-          <p className="mt-3 px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Numbers &amp; Symbols</p>
-          <div className="grid grid-cols-8 gap-1.5">
-            {KEYCAP_BUTTONS.map(({ char, emoji }) => (
-              <button
-                key={char}
-                type="button"
-                onClick={(e) => onEmojiClick(emoji, e.shiftKey)}
-                className="grid h-9 w-9 place-items-center rounded bg-[#2b2d31] hover:bg-[#3a3d45]"
-                title={`keycap_${char}`}
-                aria-label={`Keycap ${char}`}
-              >
-                <img
-                  src={`${REGIONAL_INDICATOR_TWEMOJI_BASE}${toEmojiUnified(emoji)}.svg`}
-                  alt={emoji}
-                  draggable={false}
-                  className="h-5 w-5"
-                />
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <EmojiPicker
-          onEmojiClick={(emojiData: EmojiClickData, event: MouseEvent) => {
-            const char = emojiData.isCustom
-              ? (CUSTOM_EMOJI_CHAR[emojiData.emoji] ?? emojiData.emoji)
-              : emojiData.emoji;
-            onEmojiClick(char, event.shiftKey);
-          }}
-          theme={Theme.DARK}
-          emojiStyle={EmojiStyle.TWITTER}
-          searchPlaceholder="Search emojis"
-          previewConfig={{ showPreview: false }}
-          suggestedEmojisMode={SuggestionMode.FREQUENT}
-          customEmojis={CUSTOM_EMOJIS}
-          categories={PICKER_CATEGORIES}
-          className={`discord-emoji-picker discord-emoji-picker--${variant}`}
-          height={bodyHeight}
-          width={bodyWidth}
-          lazyLoadEmojis
-        />
-      )}
+        ) : (
+          <EmojiPicker
+            onEmojiClick={(emojiData: EmojiClickData, event: MouseEvent) => {
+              const char = emojiData.isCustom
+                ? (CUSTOM_EMOJI_CHAR[emojiData.emoji] ?? emojiData.emoji)
+                : emojiData.emoji;
+              onEmojiClick(char, event.shiftKey);
+            }}
+            theme={Theme.DARK}
+            emojiStyle={EmojiStyle.TWITTER}
+            searchPlaceholder="Search emojis"
+            previewConfig={{ showPreview: false }}
+            suggestedEmojisMode={SuggestionMode.FREQUENT}
+            customEmojis={CUSTOM_EMOJIS}
+            categories={PICKER_CATEGORIES}
+            className={`discord-emoji-picker discord-emoji-picker--${variant}`}
+            height={bodyHeight - 60}
+            width={bodyWidth}
+            lazyLoadEmojis
+          />
+        )}
+      </div>
     </div>
   );
 };

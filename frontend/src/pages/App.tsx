@@ -5,6 +5,7 @@ import ServerBar from "../components/ServerBar";
 import ChannelList from "../components/ChannelList";
 import ChatArea from "../components/ChatArea";
 import MemberList from "../components/MemberList";
+import MessageSearchModal from "../components/MessageSearchModal";
 import UserBar from "../components/UserBar";
 import SettingsModal from "../components/SettingsModal";
 import CreateServerModal from "../components/CreateServerModal";
@@ -45,7 +46,9 @@ const MainPage = (): JSX.Element => {
     outgoingPendingFriends,
     typingByChannel,
     channelOpenFocusMessageId,
+    channelOpenFocusMode,
     dmChannelOpenFocusMessageId,
+    dmChannelOpenFocusMode,
     unreadByChannel,
     mentionUnreadByChannel,
     unreadDMs,
@@ -55,6 +58,8 @@ const MainPage = (): JSX.Element => {
     loadDMs,
     setActiveServer,
     setActiveChannel,
+    openChannelMessage,
+    openDMMessage,
     setActiveDM,
     openHome,
     sendFriendRequest,
@@ -81,6 +86,7 @@ const MainPage = (): JSX.Element => {
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [searchPanelOpen, setSearchPanelOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<{
     open: boolean;
     title?: string;
@@ -116,7 +122,23 @@ const MainPage = (): JSX.Element => {
     const friendMatch = friends.find((f) => f.id === base.id);
     return friendMatch?.friendsSince ? { ...base, friendsSince: friendMatch.friendsSince } : base;
   }, [activeDM, user?.id, friends]);
+
+  useEffect(() => {
+    if ((mode === "SERVER" && activeServerId) || (mode === "DM" && activeDMId)) {
+      return;
+    }
+    setSearchPanelOpen(false);
+  }, [activeDMId, activeServerId, mode]);
+
   const isServerOwner = activeServer?.ownerId === user?.id;
+  const currentMember = activeServer?.members.find((m) => m.userId === user?.id);
+  const memberPerms = useMemo(() => {
+    try {
+      return JSON.parse(currentMember?.permissions || "{}");
+    } catch {
+      return {};
+    }
+  }, [currentMember?.permissions]);
   const hasServers = servers.length > 0;
 
   const liveProfileUser = useMemo(() => {
@@ -177,6 +199,17 @@ const MainPage = (): JSX.Element => {
       }
     }
     return ids;
+  }, [servers, mentionUnreadByChannel]);
+
+  const mentionCountByServer = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const server of servers) {
+      const count = server.channels.reduce((sum, channel) => sum + (mentionUnreadByChannel[channel.id] ?? 0), 0);
+      if (count > 0) {
+        counts[server.id] = count;
+      }
+    }
+    return counts;
   }, [servers, mentionUnreadByChannel]);
 
   useEffect(() => {
@@ -388,13 +421,14 @@ const MainPage = (): JSX.Element => {
   };
 
   return (
-    <main className="flex h-screen w-screen bg-discord-dark5 text-discord-text">
+    <main className="wc-shell flex h-screen w-screen text-discord-text">
       <ServerBar
         servers={servers}
         homeActive={homeActive}
         activeServerId={activeServerId}
         unreadServerIds={unreadServerIds}
         mentionServerIds={mentionServerIds}
+        mentionCountByServer={mentionCountByServer}
         dms={dms}
         me={user}
         unreadDMs={unreadDMs}
@@ -407,10 +441,10 @@ const MainPage = (): JSX.Element => {
       />
 
       <div className="flex min-w-0 flex-1">
-        <div className="flex h-full w-60 flex-col">
+        <div className="wc-sidebar flex h-full w-60 flex-col">
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex gap-1 border-b border-black/20 bg-[#232428] p-2">
-              <button className="relative flex-1 rounded bg-[#313338] px-2 py-1 text-xs hover:bg-[#3a3d45]" onClick={() => setFriendsOpen(true)}>
+            <div className="mx-2 my-2 flex min-h-[54px] items-center gap-1 rounded-2xl border border-white/[0.035] bg-white/[0.03] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-xl">
+              <button className="relative flex-1 rounded-xl border border-transparent bg-[var(--wc-surface-tint)] px-2.5 py-1.5 text-xs font-medium text-white transition hover:border-white/[0.04] hover:bg-[var(--wc-surface-tint-strong)]" onClick={() => setFriendsOpen(true)}>
                 <UserPlus size={12} className="mr-1 inline" />
                 Friends
                 {pendingFriends.length > 0 ? (
@@ -419,13 +453,13 @@ const MainPage = (): JSX.Element => {
                   </span>
                 ) : null}
               </button>
-              {mode === "SERVER" && activeServer && isServerOwner ? (
+              {mode === "SERVER" && activeServer && (isServerOwner || memberPerms.banMembers) ? (
                 <button
-                  className="rounded bg-[#313338] px-2 py-1 text-xs hover:bg-[#3a3d45]"
+                  className="rounded-xl border border-transparent bg-white/[0.04] px-2.5 py-1.5 text-xs font-medium text-discord-text transition hover:border-white/[0.04] hover:bg-white/[0.07]"
                   onClick={() => setServerSettingsOpen(true)}
                 >
                   <Shield size={12} className="mr-1 inline" />
-                  Server
+                  {isServerOwner ? "Server" : "Bans"}
                 </button>
               ) : null}
             </div>
@@ -443,6 +477,7 @@ const MainPage = (): JSX.Element => {
             ) : hasServers ? (
               <ChannelList
                 serverName={activeServer?.name ?? ""}
+                serverBannerUrl={activeServer?.bannerImageUrl ?? null}
                 categories={activeServer?.categories ?? []}
                 channels={activeServer?.channels ?? []}
                 activeChannelId={activeChannelId}
@@ -464,7 +499,7 @@ const MainPage = (): JSX.Element => {
                   });
                 }}
                 onLeaveServer={() => leaveCurrentServer()}
-                canManage={Boolean(isServerOwner)}
+                canManage={Boolean(isServerOwner || memberPerms.manageChannels)}
                 onDeleteChannel={(id) => deleteChannel(id)}
                 onRenameChannel={(id) => renameChannel(id)}
                 onDeleteCategory={(id) => deleteCategory(id)}
@@ -514,35 +549,52 @@ const MainPage = (): JSX.Element => {
         </div>
 
         {mode === "SERVER" && !activeServer ? (
-          <div className="flex flex-1 items-center justify-center text-discord-muted">
-            <p className="text-sm">Select or join a server to get started</p>
+          <div className="flex flex-1 items-center justify-center px-6 text-discord-muted">
+            <div className="wc-empty-state flex max-w-md flex-col items-center gap-3 rounded-3xl px-8 py-10 text-center">
+              <p className="text-sm font-semibold text-white">Choose a server</p>
+              <p className="text-sm text-discord-muted">Select one from the rail or join a new space to start talking.</p>
+            </div>
           </div>
         ) : mode === "DM" && !activeDM ? (
-          <div className="flex flex-1 items-center justify-center text-discord-muted">
-            <p className="text-sm">Select a direct message to start chatting</p>
+          <div className="flex flex-1 items-center justify-center px-6 text-discord-muted">
+            <div className="wc-empty-state flex max-w-md flex-col items-center gap-3 rounded-3xl px-8 py-10 text-center">
+              <p className="text-sm font-semibold text-white">Pick a DM</p>
+              <p className="text-sm text-discord-muted">Open a direct message on the left to jump back into the conversation.</p>
+            </div>
           </div>
         ) : (
           <ChatArea
             key={`${mode}:${mode === "SERVER" ? (activeChannelId ?? "none") : (activeDMId ?? "none")}`}
             me={user}
             mode={mode}
+            channelId={mode === "SERVER" ? activeChannelId : null}
             channelName={mode === "SERVER" ? activeChannel?.name ?? "general" : activeDMName}
             messages={mode === "SERVER" ? messages : dmMessages}
             focusMessageId={mode === "SERVER" ? channelOpenFocusMessageId : dmChannelOpenFocusMessageId}
+            focusMessageMode={mode === "SERVER" ? channelOpenFocusMode : dmChannelOpenFocusMode}
             typingUsers={(typingByChannel[mode === "SERVER" ? (activeChannelId ?? "") : (activeDMId ?? "")] ?? []).map((entry) => entry.displayName)}
             mentionMembers={activeServer?.members ?? []}
             channels={activeServer?.channels ?? []}
             onChannelClick={setActiveChannel}
             onOpenProfile={setProfileUser}
-            canModerateServerMessages={Boolean(isServerOwner)}
+            canModerateServerMessages={Boolean(isServerOwner || memberPerms.manageMessages)}
+            canManageChannels={Boolean(isServerOwner || memberPerms.manageChannels)}
             channelReadOnly={mode === "SERVER" ? Boolean(activeChannel?.readOnly) : false}
             onKickMember={(memberId) => kickMember(memberId)}
             onBanMember={(memberId) => banMember(memberId)}
+            canKickMembers={Boolean(isServerOwner || memberPerms.kickMembers)}
+            canBanMembers={Boolean(isServerOwner || memberPerms.banMembers)}
+            serverOwnerId={activeServer?.ownerId}
           />
         )}
 
         {homeActive ? (
-          <DMProfilePanel user={activeDMUser} me={user} servers={servers} />
+          <DMProfilePanel
+            user={activeDMUser}
+            me={user}
+            servers={servers}
+            topSlot={mode === "DM" && activeDMId ? <MessageSearchModal scope="dm" targetId={activeDMId} conversationLabel={activeDMUser?.nickname?.trim() || activeDMUser?.username || activeDMName} onJumpToMessage={openDMMessage} onOpenChange={setSearchPanelOpen} /> : null}
+          />
         ) : (
           <MemberList
             members={activeServer?.members ?? []}
@@ -553,14 +605,16 @@ const MainPage = (): JSX.Element => {
             onKick={(memberId) => kickMember(memberId)}
             onBan={(memberId) => banMember(memberId)}
             onSetNickColor={() => setNickColorServerId(activeServerId)}
+            expanded={mode === "SERVER" && searchPanelOpen}
+            topSlot={mode === "SERVER" && activeServerId ? <MessageSearchModal scope="server" targetId={activeServerId} members={activeServer?.members ?? []} onJumpToMessage={openChannelMessage} onOpenChange={setSearchPanelOpen} /> : null}
           />
         )}
       </div>
 
       {commandOpen ? (
         <div className="fixed inset-0 z-40 grid place-items-start bg-black/40 pt-24" onClick={() => setCommandOpen(false)}>
-          <div className="w-full max-w-xl rounded-lg bg-[#313338] p-3" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-center gap-2 rounded bg-[#1e1f22] px-3 py-2 text-sm text-discord-muted">
+          <div className="wc-modal-card w-full max-w-xl rounded-[22px] p-3" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center gap-2 rounded-2xl border border-white/[0.04] bg-black/20 px-3 py-2 text-sm text-discord-muted backdrop-blur-xl">
               <Search size={14} />
               Quick switcher (Ctrl+K)
             </div>
@@ -568,7 +622,7 @@ const MainPage = (): JSX.Element => {
               {(activeServer?.channels ?? []).map((channel) => (
                 <button
                   key={channel.id}
-                  className="flex w-full rounded px-2 py-1.5 text-left text-sm hover:bg-[#404249]"
+                  className="flex w-full rounded-xl border border-transparent px-3 py-2 text-left text-sm transition hover:border-white/[0.04] hover:bg-white/[0.05]"
                   onClick={() => {
                     void setActiveChannel(channel.id);
                     setCommandOpen(false);
@@ -607,6 +661,7 @@ const MainPage = (): JSX.Element => {
         open={serverSettingsOpen}
         server={activeServer}
         isOwner={Boolean(isServerOwner)}
+        canViewBans={Boolean(isServerOwner || memberPerms.banMembers)}
         onClose={() => setServerSettingsOpen(false)}
         onRefresh={async () => {
           if (activeServerId) {
@@ -719,6 +774,12 @@ const MainPage = (): JSX.Element => {
           const ch = activeServer?.channels.find((c) => c.id === channelId);
           if (!ch) return;
           await api.patch(`/chat/channels/${channelId}`, { readOnly: !ch.readOnly });
+          if (activeServerId) await setActiveServer(activeServerId);
+        }}
+        onToggleAnnouncement={async (channelId) => {
+          const ch = activeServer?.channels.find((c) => c.id === channelId);
+          if (!ch) return;
+          await api.patch(`/chat/channels/${channelId}`, { isAnnouncement: !ch.isAnnouncement });
           if (activeServerId) await setActiveServer(activeServerId);
         }}
         onDelete={(channelId) => deleteChannel(channelId)}

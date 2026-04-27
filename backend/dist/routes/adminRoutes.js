@@ -8,6 +8,7 @@ router.use(adminAuth_1.adminAuthMiddleware);
 router.get("/overview", adminController_1.getOverview);
 router.get("/servers/:serverId", adminController_1.getServerDetail);
 router.get("/stream", adminController_1.streamAdminEvents);
+router.post("/notice", adminController_1.broadcastNotice);
 router.delete("/users/:userId", adminController_1.deleteUserAccountAsAdmin);
 router.delete("/servers/:serverId", adminController_1.deleteServerAsAdmin);
 exports.default = router;

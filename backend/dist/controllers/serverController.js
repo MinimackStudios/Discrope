@@ -3,16 +3,49 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.unbanMember = exports.getBans = exports.banMember = exports.kickMember = exports.deleteServer = exports.regenerateInvite = exports.updateServer = exports.getServer = exports.leaveServer = exports.getInviteInfo = exports.joinByInvite = exports.createServer = exports.listServers = void 0;
+exports.updateMemberPermissions = exports.updateMyMembership = exports.unbanMember = exports.getBans = exports.banMember = exports.kickMember = exports.deleteServer = exports.regenerateInvite = exports.updateServer = exports.searchServerMessages = exports.getServer = exports.leaveServer = exports.getInviteInfo = exports.joinByInvite = exports.createServer = exports.listServers = void 0;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const uuid_1 = require("uuid");
 const prisma_1 = require("../lib/prisma");
 const adminAudit_1 = require("../lib/adminAudit");
+const permissions_1 = require("../lib/permissions");
 const prismaAny = prisma_1.prisma;
+const ACTIVE_INVITE_PRESENCE_STATUSES = new Set(["ONLINE", "IDLE", "DND"]);
 const makeInviteCode = () => (0, uuid_1.v4)().replace(/-/g, "").slice(0, 8);
-const SYSTEM_USERNAME = "DiskChat";
+const SYSTEM_USERNAME = "Windcord";
 const SYSTEM_AVATAR_URL = "/disc.png";
+const messageSearchInclude = {
+    author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true } },
+    reactions: {
+        orderBy: { createdAt: "asc" },
+        include: {
+            user: {
+                select: {
+                    id: true,
+                    username: true,
+                    nickname: true,
+                    avatarUrl: true
+                }
+            }
+        }
+    },
+    replyTo: {
+        select: {
+            id: true,
+            content: true,
+            attachmentUrl: true,
+            attachmentName: true,
+            author: { select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true } }
+        }
+    },
+    channel: {
+        select: {
+            id: true,
+            name: true
+        }
+    }
+};
 const getOrCreateSystemUserId = async () => {
     const existing = await prismaAny.user.findUnique({
         where: { username: SYSTEM_USERNAME },
@@ -228,21 +261,39 @@ const getInviteInfo = async (req, res) => {
     const server = await prisma_1.prisma.server.findUnique({
         where: { inviteCode },
         include: {
-            members: true
+            members: {
+                select: {
+                    userId: true,
+                    user: {
+                        select: {
+                            status: true
+                        }
+                    }
+                }
+            }
         }
     });
     if (!server) {
         res.status(404).json({ message: "Invite not found" });
         return;
     }
+    const onlineCount = server.members.reduce((count, member) => {
+        return ACTIVE_INVITE_PRESENCE_STATUSES.has(member.user.status) ? count + 1 : count;
+    }, 0);
+    const memberCount = server.members.length;
     res.json({
         invite: {
             code: server.inviteCode,
             server: {
                 id: server.id,
                 name: server.name,
+                description: server.description,
                 iconUrl: server.iconUrl,
-                memberCount: server.members.length
+                bannerImageUrl: server.bannerImageUrl,
+                createdAt: server.createdAt,
+                memberCount,
+                onlineCount,
+                offlineCount: Math.max(0, memberCount - onlineCount)
             }
         }
     });
@@ -287,12 +338,77 @@ const getServer = async (req, res) => {
     res.json({ server });
 };
 exports.getServer = getServer;
+const searchServerMessages = async (req, res) => {
+    const userId = req.user.id;
+    const { serverId } = req.params;
+    const { q, page: pageStr, pageSize: pageSizeStr } = req.query;
+    if (!q || q.trim().length === 0) {
+        res.status(400).json({ message: "Search query is required" });
+        return;
+    }
+    const server = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { id: true, ownerId: true } });
+    if (!server) {
+        res.status(404).json({ message: "Server not found" });
+        return;
+    }
+    if (server.ownerId !== userId) {
+        const membership = await prisma_1.prisma.serverMember.findUnique({
+            where: { userId_serverId: { userId, serverId } },
+            select: { userId: true }
+        });
+        if (!membership) {
+            res.status(403).json({ message: "You do not have access to this server" });
+            return;
+        }
+    }
+    const requestedPage = Math.max(1, parseInt(pageStr || "1", 10) || 1);
+    const pageSize = Math.min(Math.max(1, parseInt(pageSizeStr || "25", 10) || 25), 50);
+    const searchTerm = q.trim().toLowerCase();
+    try {
+        const messages = await prismaAny.message.findMany({
+            where: {
+                channel: { serverId }
+            },
+            include: messageSearchInclude,
+            orderBy: { createdAt: "desc" }
+        });
+        const filtered = messages
+            .filter((message) => message.content && message.content.toLowerCase().includes(searchTerm));
+        const total = filtered.length;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        const page = Math.min(requestedPage, totalPages);
+        const offset = (page - 1) * pageSize;
+        const results = filtered
+            .slice(offset, offset + pageSize)
+            .map((message) => ({
+            message,
+            highlightedText: message.content || ""
+        }));
+        res.json({ results, total, page, pageSize, totalPages });
+    }
+    catch (error) {
+        console.error("Server search error:", error);
+        res.status(500).json({ message: "Search failed" });
+    }
+};
+exports.searchServerMessages = searchServerMessages;
 const updateServer = async (req, res) => {
     const userId = req.user.id;
     const { serverId } = req.params;
-    const { name, removeIcon } = req.body;
-    const iconUrl = req.file ? `/uploads/server-icons/${req.file.filename}` : undefined;
-    const serverAccess = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
+    const { name, description, removeIcon, removeBannerImage } = req.body;
+    const files = req.files;
+    const iconFile = files?.["icon"]?.[0];
+    const bannerImageFile = files?.["bannerImage"]?.[0];
+    const iconUrl = iconFile ? `/uploads/server-icons/${iconFile.filename}` : undefined;
+    const bannerImageUrl = bannerImageFile ? `/uploads/banners/${bannerImageFile.filename}` : undefined;
+    const normalizedName = typeof name === "string" ? name.trim() : "";
+    const normalizedDescription = typeof description === "string" ? description.trim().slice(0, 240) : undefined;
+    const shouldRemoveIcon = removeIcon === true || removeIcon === "true";
+    const shouldRemoveBannerImage = removeBannerImage === true || removeBannerImage === "true";
+    const serverAccess = await prisma_1.prisma.server.findUnique({
+        where: { id: serverId },
+        select: { ownerId: true, iconUrl: true, bannerImageUrl: true }
+    });
     if (!serverAccess || serverAccess.ownerId !== userId) {
         res.status(403).json({ message: "Only server owner can update settings" });
         return;
@@ -300,11 +416,20 @@ const updateServer = async (req, res) => {
     const server = await prisma_1.prisma.server.update({
         where: { id: serverId },
         data: {
-            ...(name ? { name } : {}),
+            ...(normalizedName ? { name: normalizedName } : {}),
+            ...(normalizedDescription !== undefined ? { description: normalizedDescription } : {}),
             ...(iconUrl ? { iconUrl } : {}),
-            ...(!iconUrl && (removeIcon === true || removeIcon === "true") ? { iconUrl: null } : {})
+            ...(!iconUrl && shouldRemoveIcon ? { iconUrl: null } : {}),
+            ...(bannerImageUrl ? { bannerImageUrl } : {}),
+            ...(!bannerImageUrl && shouldRemoveBannerImage ? { bannerImageUrl: null } : {})
         }
     });
+    if (serverAccess.iconUrl && serverAccess.iconUrl !== server.iconUrl) {
+        deleteLocalFileIfExists(serverAccess.iconUrl);
+    }
+    if (serverAccess.bannerImageUrl && serverAccess.bannerImageUrl !== server.bannerImageUrl) {
+        deleteLocalFileIfExists(serverAccess.bannerImageUrl);
+    }
     res.json({ server });
 };
 exports.updateServer = updateServer;
@@ -343,7 +468,7 @@ exports.regenerateInvite = regenerateInvite;
 const deleteServer = async (req, res) => {
     const userId = req.user.id;
     const { serverId } = req.params;
-    const existing = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true, iconUrl: true, name: true } });
+    const existing = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true, iconUrl: true, bannerImageUrl: true, name: true } });
     if (!existing || existing.ownerId !== userId) {
         res.status(403).json({ message: "Only server owner can delete server" });
         return;
@@ -359,6 +484,7 @@ const deleteServer = async (req, res) => {
         targetServerId: serverId
     });
     deleteLocalFileIfExists(existing.iconUrl);
+    deleteLocalFileIfExists(existing.bannerImageUrl);
     res.json({ deleted: true });
 };
 exports.deleteServer = deleteServer;
@@ -366,12 +492,24 @@ const kickMember = async (req, res) => {
     const userId = req.user.id;
     const { serverId, memberId } = req.params;
     const server = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
-    if (!server || server.ownerId !== userId) {
-        res.status(403).json({ message: "Only owner can kick members" });
+    if (!server) {
+        res.status(404).json({ message: "Server not found" });
+        return;
+    }
+    // Cannot kick the owner
+    if (memberId === server.ownerId) {
+        res.status(400).json({ message: "Cannot kick the server owner" });
+        return;
+    }
+    const member = await prismaAny.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId } }
+    });
+    if (!(0, permissions_1.hasPermission)(member, server.ownerId, userId, "kickMembers")) {
+        res.status(403).json({ message: "You don't have permission to kick members" });
         return;
     }
     if (memberId === userId) {
-        res.status(400).json({ message: "Owner cannot kick themselves" });
+        res.status(400).json({ message: "Cannot kick yourself" });
         return;
     }
     const targetUser = await prismaAny.user.findUnique({ where: { id: memberId }, select: { username: true } });
@@ -398,12 +536,24 @@ const banMember = async (req, res) => {
     const { serverId, memberId } = req.params;
     const { reason } = req.body;
     const server = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
-    if (!server || server.ownerId !== userId) {
-        res.status(403).json({ message: "Only owner can ban members" });
+    if (!server) {
+        res.status(404).json({ message: "Server not found" });
+        return;
+    }
+    // Cannot ban the owner
+    if (memberId === server.ownerId) {
+        res.status(400).json({ message: "Cannot ban the server owner" });
+        return;
+    }
+    const member = await prismaAny.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId } }
+    });
+    if (!(0, permissions_1.hasPermission)(member, server.ownerId, userId, "banMembers")) {
+        res.status(403).json({ message: "You don't have permission to ban members" });
         return;
     }
     if (memberId === userId) {
-        res.status(400).json({ message: "Owner cannot ban themselves" });
+        res.status(400).json({ message: "Cannot ban yourself" });
         return;
     }
     const targetUser = await prismaAny.user.findUnique({ where: { id: memberId }, select: { username: true } });
@@ -434,8 +584,15 @@ const getBans = async (req, res) => {
     const userId = req.user.id;
     const { serverId } = req.params;
     const server = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
-    if (!server || server.ownerId !== userId) {
-        res.status(403).json({ message: "Only owner can view bans" });
+    if (!server) {
+        res.status(404).json({ message: "Server not found" });
+        return;
+    }
+    const member = await prismaAny.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId } }
+    });
+    if (!(0, permissions_1.hasPermission)(member, server.ownerId, userId, "banMembers")) {
+        res.status(403).json({ message: "You don't have permission to view bans" });
         return;
     }
     const bans = await prismaAny.serverBan.findMany({
@@ -449,11 +606,105 @@ const unbanMember = async (req, res) => {
     const userId = req.user.id;
     const { serverId, memberId } = req.params;
     const server = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
-    if (!server || server.ownerId !== userId) {
-        res.status(403).json({ message: "Only owner can unban members" });
+    if (!server) {
+        res.status(404).json({ message: "Server not found" });
+        return;
+    }
+    const member = await prismaAny.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId } }
+    });
+    if (!(0, permissions_1.hasPermission)(member, server.ownerId, userId, "banMembers")) {
+        res.status(403).json({ message: "You don't have permission to unban members" });
         return;
     }
     await prismaAny.serverBan.deleteMany({ where: { userId: memberId, serverId } });
     res.json({ unbanned: true });
 };
 exports.unbanMember = unbanMember;
+const VALID_HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const updateMyMembership = async (req, res) => {
+    const userId = req.user.id;
+    const { serverId } = req.params;
+    const { nickColor } = req.body;
+    const membership = await prismaAny.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId } }
+    });
+    if (!membership) {
+        res.status(404).json({ message: "Not a member of this server" });
+        return;
+    }
+    const data = {};
+    if (nickColor !== undefined) {
+        if (nickColor !== null && !VALID_HEX_COLOR.test(nickColor)) {
+            res.status(400).json({ message: "Invalid color format" });
+            return;
+        }
+        data.nickColor = nickColor ?? null;
+    }
+    const updated = await prismaAny.serverMember.update({
+        where: { userId_serverId: { userId, serverId } },
+        data,
+        include: {
+            user: {
+                select: {
+                    id: true, username: true, nickname: true, avatarUrl: true,
+                    status: true, aboutMe: true, customStatus: true
+                }
+            }
+        }
+    });
+    const io = req.app.get("io");
+    io.emit("server:member:updated", { serverId, member: updated });
+    res.json({ member: updated });
+};
+exports.updateMyMembership = updateMyMembership;
+const updateMemberPermissions = async (req, res) => {
+    const userId = req.user.id;
+    const { serverId, memberId } = req.params;
+    const permissions = req.body;
+    const server = await prisma_1.prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
+    if (!server) {
+        res.status(404).json({ message: "Server not found" });
+        return;
+    }
+    // Only owner can update member permissions
+    if (server.ownerId !== userId) {
+        res.status(403).json({ message: "Only the server owner can update member permissions" });
+        return;
+    }
+    if (memberId === userId) {
+        res.status(400).json({ message: "Cannot update your own permissions" });
+        return;
+    }
+    const targetUser = await prismaAny.user.findUnique({ where: { id: memberId }, select: { username: true } });
+    if (targetUser?.username === SYSTEM_USERNAME) {
+        res.status(400).json({ message: "Cannot update permissions for the system user" });
+        return;
+    }
+    const membership = await prismaAny.serverMember.findUnique({
+        where: { userId_serverId: { userId: memberId, serverId } }
+    });
+    if (!membership) {
+        res.status(404).json({ message: "User is not a member of this server" });
+        return;
+    }
+    // Merge with existing permissions
+    const existingPerms = (0, permissions_1.parseMemberPermissions)(membership.permissions || null);
+    const updatedPerms = { ...existingPerms, ...permissions };
+    const updated = await prismaAny.serverMember.update({
+        where: { userId_serverId: { userId: memberId, serverId } },
+        data: { permissions: JSON.stringify(updatedPerms) },
+        include: {
+            user: {
+                select: {
+                    id: true, username: true, nickname: true, avatarUrl: true,
+                    status: true, aboutMe: true, customStatus: true
+                }
+            }
+        }
+    });
+    const io = req.app.get("io");
+    io.emit("server:member:updated", { serverId, member: updated });
+    res.json({ member: updated });
+};
+exports.updateMemberPermissions = updateMemberPermissions;

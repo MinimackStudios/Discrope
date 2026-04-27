@@ -113,97 +113,107 @@ const NickColorModal = ({ open, serverId, currentColor, onClose, onApplied }: Pr
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            initial={{ opacity: 0, y: 14, scale: 0.97 }}
+            initial={{ opacity: 0, y: 12, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 14, scale: 0.97 }}
-            transition={{ duration: 0.22 }}
-            className="w-full max-w-sm rounded-xl bg-[#2b2d31] p-5 shadow-2xl"
+            exit={{ opacity: 0, y: 12, scale: 0.97 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="wc-modal-card w-full max-w-sm overflow-hidden rounded-[22px]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-4 flex items-center justify-between">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/[0.03] px-5 py-4">
               <h2 className="text-base font-semibold text-white">Nickname Color</h2>
-              <button onClick={onClose} className="text-discord-muted hover:text-white">
-                <X size={16} />
+              <button
+                type="button"
+                className="rounded p-1 text-discord-muted transition hover:bg-white/[0.06] hover:text-white"
+                onClick={onClose}
+              >
+                <X size={18} />
               </button>
             </div>
 
-            {/* Preview */}
-            <div className="mb-4 rounded-lg bg-[#1e1f22] px-4 py-3 text-sm font-semibold" style={{ color: selected ?? "white" }}>
-              Preview Text
-            </div>
+            {/* Content */}
+            <div className="p-5">
+              {/* Preview */}
+              <div className="mb-4 rounded-xl px-4 py-3 text-sm font-semibold" style={{ backgroundColor: "rgba(0, 0, 0, 0.22)", color: selected ?? "white", border: "1px solid rgba(255, 255, 255, 0.04)" }}>
+                Preview Text
+              </div>
 
-            {/* Presets grid */}
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Preset Colors</p>
-            <div className="mb-4 grid grid-cols-5 gap-2">
-              {PRESET_COLORS.map((p) => (
-                <button
-                  key={p.value}
-                  title={p.label}
-                  onClick={() => handlePreset(p.value)}
-                  className={`h-8 w-full rounded-md border-2 transition-all ${selected?.toLowerCase() === p.value.toLowerCase() ? "border-white scale-110" : "border-transparent hover:border-white/40"}`}
-                  style={{ backgroundColor: p.value }}
+              {/* Presets grid */}
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Preset Colors</p>
+              <div className="mb-4 grid grid-cols-5 gap-2">
+                {PRESET_COLORS.map((p) => (
+                  <button
+                    key={p.value}
+                    title={p.label}
+                    onClick={() => handlePreset(p.value)}
+                    className={`h-8 w-full rounded-md border-2 transition-all ${selected?.toLowerCase() === p.value.toLowerCase() ? "border-white/[0.6] scale-110" : "border-transparent hover:border-white/[0.2]"}`}
+                    style={{ backgroundColor: p.value }}
+                  />
+                ))}
+              </div>
+
+              {/* Custom */}
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Custom Color</p>
+              <div className="mb-1 flex gap-2">
+                <input
+                  ref={colorInputRef}
+                  type="color"
+                  value={HEX_RE.test(customInput) ? customInput : "#ffffff"}
+                  onChange={(e) => handleCustomInput(e.target.value)}
+                  className="h-9 w-10 cursor-pointer rounded-xl border border-white/[0.06] p-0.5"
+                  style={{ backgroundColor: "rgba(0, 0, 0, 0.22)" }}
+                  title="Color picker"
                 />
-              ))}
-            </div>
+                {"EyeDropper" in window ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleEyeDropper()}
+                    title="Pick color from screen"
+                    className="flex h-9 items-center gap-1.5 rounded-xl border border-white/[0.06] px-3 text-xs text-discord-muted hover:text-white"
+                    style={{ backgroundColor: "rgba(0, 0, 0, 0.22)" }}
+                  >
+                    <span>💉</span> Eyedrop
+                  </button>
+                ) : null}
+                <input
+                  type="text"
+                  value={customInput}
+                  onChange={(e) => handleCustomInput(e.target.value)}
+                  placeholder="#000000"
+                  maxLength={7}
+                  className="min-w-0 flex-1 rounded-xl border border-white/[0.06] px-3 text-sm text-white outline-none ring-1 ring-transparent focus:ring-[var(--wc-accent)]"
+                  style={{ backgroundColor: "rgba(0, 0, 0, 0.22)" }}
+                />
+              </div>
+              {error ? <p className="mb-2 text-xs text-[#ed4245]">{error}</p> : <div className="mb-2 h-4" />}
 
-            {/* Custom */}
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Custom Color</p>
-            <div className="mb-1 flex gap-2">
-              <input
-                ref={colorInputRef}
-                type="color"
-                value={HEX_RE.test(customInput) ? customInput : "#ffffff"}
-                onChange={(e) => handleCustomInput(e.target.value)}
-                className="h-9 w-10 cursor-pointer rounded border border-white/10 bg-[#1e1f22] p-0.5"
-                title="Color picker"
-              />
-              {"EyeDropper" in window ? (
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => void handleEyeDropper()}
-                  title="Pick color from screen"
-                  className="flex h-9 items-center gap-1.5 rounded bg-[#1e1f22] px-3 text-xs text-discord-muted hover:text-white border border-white/10"
+                  onClick={() => void handleReset()}
+                  disabled={saving || currentColor === null}
+                  className="rounded-xl px-3 py-1.5 text-sm text-discord-muted transition hover:bg-white/[0.05] hover:text-white disabled:opacity-40"
                 >
-                  <span>💉</span> Eyedrop
+                  Reset
                 </button>
-              ) : null}
-              <input
-                type="text"
-                value={customInput}
-                onChange={(e) => handleCustomInput(e.target.value)}
-                placeholder="#000000"
-                maxLength={7}
-                className="min-w-0 flex-1 rounded bg-[#1e1f22] px-3 text-sm text-white outline-none ring-1 ring-transparent focus:ring-discord-blurple border border-white/10"
-              />
-            </div>
-            {error ? <p className="mb-2 text-xs text-[#ed4245]">{error}</p> : <div className="mb-2 h-4" />}
-
-            {/* Actions */}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => void handleReset()}
-                disabled={saving || currentColor === null}
-                className="rounded bg-[#3a3d45] px-3 py-1.5 text-sm text-discord-muted hover:text-white disabled:opacity-40"
-              >
-                Reset
-              </button>
-              <div className="flex-1" />
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded px-3 py-1.5 text-sm text-discord-muted hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSave()}
-                disabled={saving || Boolean(error)}
-                className="rounded bg-discord-blurple px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#4752c4] disabled:opacity-50"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl px-3 py-1.5 text-sm text-discord-muted transition hover:bg-white/[0.05] hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSave()}
+                  disabled={saving || Boolean(error)}
+                  className="rounded-xl bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] px-4 py-1.5 text-sm font-semibold text-white shadow-[0_12px_26px_rgba(0,0,0,0.2)] transition hover:brightness-110 disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+              </div>
             </div>
           </motion.div>
         </motion.div>

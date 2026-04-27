@@ -8,4 +8,6 @@ frontend/tsconfig.tsbuildinfo
 .env
 .DS_Store
 DEPLOY_FREE.md
+FEATURE_IDEAS.md
 local-admin/
+.github/agents

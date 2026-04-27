@@ -16,6 +16,7 @@ type Props = {
   activeServerId: string | null;
   unreadServerIds: Set<string>;
   mentionServerIds: Set<string>;
+  mentionCountByServer: Record<string, number>;
   dms: DMChannel[];
   me: User | null;
   unreadDMs: Record<string, number>;
@@ -41,6 +42,7 @@ const ServerBar = ({
   activeServerId,
   unreadServerIds,
   mentionServerIds,
+  mentionCountByServer,
   dms,
   me,
   unreadDMs,
@@ -71,11 +73,11 @@ const ServerBar = ({
   };
 
   return (
-    <aside className="flex h-full w-[72px] flex-col items-center gap-2 bg-discord-dark0 py-3">
+    <aside className="wc-rail flex h-full w-[76px] flex-col items-center gap-2 py-3">
       <button
         onClick={onSelectHome}
-        className={`relative grid h-12 w-12 place-items-center text-white transition hover:rounded-xl ${
-          homeActive ? "rounded-2xl bg-discord-blurple" : "rounded-3xl bg-[#2f3136]"
+        className={`wc-rail-button relative grid h-12 w-12 place-items-center text-white transition hover:rounded-2xl ${
+          homeActive ? "wc-rail-button--active rounded-2xl" : "rounded-[20px]"
         }`}
         aria-label="Home"
       >
@@ -87,7 +89,7 @@ const ServerBar = ({
         ) : null}
       </button>
 
-      <div className="h-px w-8 bg-[#3f4248]" />
+      <div className="wc-rail-divider h-px w-9" />
 
       <div className="discord-scrollbar flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto">
         {servers.map((server) => {
@@ -116,8 +118,8 @@ const ServerBar = ({
                 onMouseLeave={() => setHoverTooltip((current) => (current?.name === server.name ? null : current))}
                 onBlur={() => setHoverTooltip((current) => (current?.name === server.name ? null : current))}
                 aria-label={server.name}
-                className={`relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-3xl bg-[#2f3136] text-sm font-semibold text-white transition ${
-                  activeInServerView ? "rounded-2xl" : "hover:rounded-2xl"
+                className={`wc-rail-button relative flex h-12 w-12 items-center justify-center overflow-hidden text-sm font-semibold text-white transition ${
+                  activeInServerView ? "wc-rail-button--active rounded-2xl" : "rounded-[20px] hover:rounded-2xl"
                 }`}
               >
                 {server.iconUrl ? (
@@ -130,7 +132,7 @@ const ServerBar = ({
               </button>
               {hasMention ? (
                 <span className="pointer-events-none absolute bottom-0.5 right-1.5 z-20 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 border-[#1e1f22] bg-[#ed4245] px-1 text-[10px] font-bold leading-none text-white">
-                  1
+                  {Math.min(mentionCountByServer[server.id] ?? 1, 99)}
                 </span>
               ) : null}
             </div>
@@ -143,39 +145,48 @@ const ServerBar = ({
           className="pointer-events-none fixed z-[120] -translate-y-1/2"
           style={{ top: hoverTooltip.top, left: hoverTooltip.left }}
         >
-          <div className="relative w-[198px] rounded-xl border border-white/10 bg-[#1e1f22] px-3 py-2.5 shadow-[0_20px_45px_rgba(0,0,0,0.45)]">
-            <span className="absolute -left-1 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 border-b border-l border-white/10 bg-[#1e1f22]" />
-            <p className="break-words text-[13px] font-semibold leading-5 text-[#f2f3f5]">{hoverTooltip.name}</p>
-            <div className="mt-2 flex items-center gap-4 text-sm font-semibold">
-              <span className="inline-flex items-center gap-1.5 text-[#23a55a]">
-                <span className="h-3 w-3 rounded-full bg-[#23a55a]" />
-                {hoverTooltip.onlineCount.toLocaleString()}
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-[#9ca0aa]">
-                <span className="h-3 w-3 rounded-full border-2 border-[#9ca0aa]" />
-                {hoverTooltip.offlineCount.toLocaleString()}
-              </span>
+          <div className="relative">
+            <span
+              aria-hidden="true"
+              className="absolute left-0 top-1/2 z-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[3px]"
+              style={{
+                background: "var(--wc-modal-bg)",
+                boxShadow: "inset 1px 1px 0 rgba(255, 255, 255, 0.04)"
+              }}
+            />
+            <div className="wc-popover relative z-10 w-[198px] rounded-2xl px-3 py-2.5">
+              <p className="break-words text-[13px] font-semibold leading-5 text-[#f2f3f5]">{hoverTooltip.name}</p>
+              <div className="mt-2 flex items-center gap-4 text-sm font-semibold">
+                <span className="inline-flex items-center gap-1.5 text-[#23a55a]">
+                  <span className="h-3 w-3 rounded-full bg-[#23a55a]" />
+                  {hoverTooltip.onlineCount.toLocaleString()}
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[#9ca0aa]">
+                  <span className="h-3 w-3 rounded-full border-2 border-[#9ca0aa]" />
+                  {hoverTooltip.offlineCount.toLocaleString()}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       ) : null}
 
       <button
-        className="grid h-12 w-12 place-items-center rounded-3xl bg-[#2f3136] text-[#23a55a] transition hover:rounded-2xl"
+        className="wc-rail-button grid h-12 w-12 place-items-center rounded-[20px] text-[#68d391] transition hover:rounded-2xl"
         aria-label="Add a Server"
         onClick={onCreateServer}
       >
         <Plus size={20} />
       </button>
       <button
-        className="grid h-12 w-12 place-items-center rounded-3xl bg-[#2f3136] text-discord-muted transition hover:rounded-2xl hover:text-white"
+        className="wc-rail-button grid h-12 w-12 place-items-center rounded-[20px] text-discord-muted transition hover:rounded-2xl hover:text-white"
         aria-label="Join a Server"
         onClick={onJoinByInvite}
       >
         <Compass size={20} />
       </button>
       <button
-        className="grid h-12 w-12 place-items-center rounded-3xl bg-[#2f3136] text-discord-muted transition hover:rounded-2xl hover:text-red-300"
+        className="wc-rail-button grid h-12 w-12 place-items-center rounded-[20px] text-discord-muted transition hover:rounded-2xl hover:text-red-300"
         aria-label="Logout"
         onClick={onLogout}
       >

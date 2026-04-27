@@ -7,6 +7,7 @@ type Props = {
   cutoutColor?: string;
   ringColor?: string;
   ringWidth?: number;
+  transparent?: boolean;
 };
 
 const colorByStatus: Record<UserStatus, string> = {
@@ -17,14 +18,15 @@ const colorByStatus: Record<UserStatus, string> = {
   OFFLINE: "bg-[#80848e]"
 };
 
-const StatusDot = ({ status, sizeClassName = "h-2.5 w-2.5", cutoutClassName = "", cutoutColor, ringColor, ringWidth = 4 }: Props): JSX.Element => {
+const StatusDot = ({ status, sizeClassName = "h-2.5 w-2.5", cutoutClassName = "", cutoutColor, ringColor, ringWidth = 4, transparent = false }: Props): JSX.Element => {
   const ringStyle = ringColor ? { boxShadow: `0 0 0 ${ringWidth}px ${ringColor}` } : undefined;
-  const baseClasses = `relative inline-block rounded-full ${sizeClassName} ${cutoutClassName} ${colorByStatus[status]}`;
+  const baseClasses = `relative inline-block rounded-full ${sizeClassName} ${cutoutClassName} ${transparent ? "" : colorByStatus[status]}`;
+  const resolvedCutoutColor = cutoutColor ?? "var(--wc-profile-cutout, #1e1f22)";
 
   if (status === "IDLE") {
     return (
       <span className={baseClasses} style={ringStyle}>
-        <span className="absolute right-0 top-0 h-[58%] w-[58%] rounded-full" style={{ backgroundColor: cutoutColor ?? "#1e1f22" }} />
+        <span className="absolute right-0 top-0 h-[58%] w-[58%] rounded-full" style={{ backgroundColor: resolvedCutoutColor }} />
       </span>
     );
   }
@@ -32,7 +34,7 @@ const StatusDot = ({ status, sizeClassName = "h-2.5 w-2.5", cutoutClassName = ""
   if (status === "DND") {
     return (
       <span className={baseClasses} style={ringStyle}>
-        <span className="absolute left-1/2 top-1/2 h-[32%] w-[58%] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ backgroundColor: cutoutColor ?? "#1e1f22" }} />
+        <span className="absolute left-1/2 top-1/2 h-[32%] w-[58%] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ backgroundColor: resolvedCutoutColor }} />
       </span>
     );
   }
@@ -40,7 +42,7 @@ const StatusDot = ({ status, sizeClassName = "h-2.5 w-2.5", cutoutClassName = ""
   if (status === "INVISIBLE" || status === "OFFLINE") {
     return (
       <span className={baseClasses} style={ringStyle}>
-        <span className="absolute inset-[28%] rounded-full" style={{ backgroundColor: cutoutColor ?? "#1e1f22" }} />
+        <span className="absolute inset-[28%] rounded-full" style={{ backgroundColor: resolvedCutoutColor }} />
       </span>
     );
   }

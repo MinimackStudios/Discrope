@@ -8,10 +8,12 @@ import {
   createMessage,
   deleteMessage,
   editMessage,
+  getMessageContext,
   listMessages,
   pinnedMessages,
   reorderCategories,
   reorderChannels,
+  searchMessages,
   togglePin,
   toggleReaction,
   updateCategory,
@@ -40,6 +42,8 @@ router.patch("/servers/:serverId/channels/reorder", reorderChannels);
 router.delete("/channels/:channelId", deleteChannel);
 router.patch("/channels/:channelId", updateChannel);
 
+router.get("/channels/:channelId/messages/search", searchMessages);
+router.get("/channels/:channelId/messages/:messageId/context", getMessageContext);
 router.get("/channels/:channelId/messages", listMessages);
 router.get("/channels/:channelId/pinned", pinnedMessages);
 router.post(

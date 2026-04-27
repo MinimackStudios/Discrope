@@ -4,6 +4,14 @@
   "less.lint.unknownAtRules": "ignore",
   "chat.tools.terminal.autoApprove": {
     "npx tsc": true,
-    "npx prisma": true
+    "npx prisma": true,
+    "/^npm --prefix frontend run build$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^npm --prefix backend run build$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }

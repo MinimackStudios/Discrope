@@ -6,10 +6,18 @@ import { useBackdropClose } from "../lib/useBackdropClose";
 import { useAuthStore } from "../lib/stores/authStore";
 import { getNotifSoundPref, setNotifSoundPref } from "../lib/stores/chatStore";
 import { resolveMediaUrl, resolveUserAvatarUrl } from "../lib/media";
+import {
+  WINDCORD_THEME_OPTIONS,
+  applyThemePreference,
+  getStoredThemePreference,
+  getThemeAccentHex,
+  setThemePreference,
+  type WindcordThemeName
+} from "../lib/theme";
 import type { UserStatus } from "../types";
 import AvatarCropModal from "./AvatarCropModal";
 
-type Tab = "profile" | "account" | "security";
+type Tab = "profile" | "appearance" | "account" | "security";
 
 type Props = {
   open: boolean;
@@ -28,7 +36,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
   const [status, setStatus] = useState<UserStatus>((user?.status as UserStatus) ?? "ONLINE");
   const [aboutMe, setAboutMe] = useState(user?.aboutMe ?? "");
   const [customStatus, setCustomStatus] = useState(user?.customStatus ?? "");
-  const [bannerColor, setBannerColor] = useState(user?.bannerColor ?? "#5865f2");
+  const [bannerColor, setBannerColor] = useState(() => user?.bannerColor ?? getThemeAccentHex(getStoredThemePreference()));
   const [accentColor, setAccentColor] = useState(user?.accentColor ?? "");
   const [avatar, setAvatar] = useState<File | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
@@ -42,6 +50,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [notifSound, setNotifSound] = useState<"default" | "alt">(() => getNotifSoundPref());
+  const [theme, setTheme] = useState<WindcordThemeName>(() => getStoredThemePreference());
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [bannerImage, setBannerImage] = useState<File | null>(null);
   const [removeBannerImage, setRemoveBannerImage] = useState(false);
@@ -76,7 +85,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
     setStatus((user?.status as UserStatus) ?? "ONLINE");
     setAboutMe(user?.aboutMe ?? "");
     setCustomStatus(user?.customStatus ?? "");
-    setBannerColor(user?.bannerColor ?? "#5865f2");
+    setBannerColor(user?.bannerColor ?? getThemeAccentHex(getStoredThemePreference()));
     setAccentColor(user?.accentColor ?? "");
     setAvatar(null);
     setRemoveAvatar(false);
@@ -88,6 +97,13 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
 
   useEffect(() => {
     if (open) setSaved(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setTheme(getStoredThemePreference());
   }, [open]);
 
   const onSubmit = async (event: FormEvent): Promise<void> => {
@@ -181,8 +197,18 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
     } catch { /* cancelled */ }
   };
 
+  const handleThemeSelect = (nextTheme: WindcordThemeName): void => {
+    setTheme(nextTheme);
+    if (!user?.bannerColor) {
+      setBannerColor(getThemeAccentHex(nextTheme));
+    }
+    setThemePreference(nextTheme);
+    applyThemePreference(nextTheme);
+  };
+
   const NAV: { id: Tab; label: string }[] = [
     { id: "profile", label: "My Profile" },
+    { id: "appearance", label: "Appearance" },
     { id: "account", label: "Account" },
     { id: "security", label: "Security" },
   ];
@@ -196,7 +222,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16, ease: "easeOut" }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(6,8,12,0.74)] p-4 backdrop-blur-sm"
             onPointerDown={onBackdropPointerDown}
             onClick={onBackdropClick}
           >
@@ -205,19 +231,19 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 14, scale: 0.97 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
-              className="flex w-full max-w-2xl overflow-hidden rounded-xl bg-[#2b2d31] shadow-[0_28px_90px_rgba(0,0,0,0.44)]"
+              className="wc-modal-card flex w-full max-w-[58rem] overflow-hidden rounded-[26px]"
               style={{ maxHeight: "calc(100vh - 2rem)" }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Sidebar */}
-              <div className="w-44 shrink-0 bg-[#232428] p-3">
+              <div className="w-48 shrink-0 border-r border-white/[0.04] p-3.5" style={{ background: "var(--wc-settings-sidebar-bg)" }}>
                 <p className="mb-1 px-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-discord-muted">User Settings</p>
                 {NAV.map((n) => (
                   <button
                     key={n.id}
                     type="button"
                     onClick={() => setTab(n.id)}
-                    className={`mt-0.5 w-full rounded px-2 py-1.5 text-left text-sm font-medium transition-colors ${tab === n.id ? "bg-[#3a3d45] text-white" : "text-discord-muted hover:bg-[#2f3136] hover:text-white"}`}
+                    className={`mt-1 w-full rounded-xl border px-2.5 py-2 text-left text-sm font-medium transition ${tab === n.id ? "border-white/[0.04] bg-white/[0.06] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]" : "border-transparent text-discord-muted hover:border-white/[0.03] hover:bg-white/[0.04] hover:text-white"}`}
                   >
                     {n.label}
                   </button>
@@ -225,7 +251,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
               </div>
 
               {/* Content */}
-              <form onSubmit={onSubmit} className="discord-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto p-6">
+              <form onSubmit={onSubmit} className="discord-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] p-6">
 
                 {/* MY PROFILE */}
                 {tab === "profile" && (
@@ -233,7 +259,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                     <h2 className="mb-4 text-lg font-semibold">My Profile</h2>
 
                     {/* Banner preview */}
-                    <div className="mb-4 overflow-hidden rounded-lg">
+                    <div className="mb-4 overflow-hidden rounded-[20px] border border-white/[0.06] bg-black/15">
                       <div className="group relative h-20 w-full cursor-pointer" onClick={() => bannerFileInputRef.current?.click()}>
                         {bannerPreviewUrl
                           ? <img src={bannerPreviewUrl} alt="" className="h-full w-full object-cover" />
@@ -252,7 +278,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                           onChange={(e) => { onBannerImagePicked(e.target.files?.[0] ?? null); e.target.value = ""; }}
                         />
                       </div>
-                      <div className="flex items-center gap-3 bg-[#232428] px-4 pb-3 pt-2">
+                      <div className="flex items-center gap-3 bg-[var(--wc-profile-cutout)] px-4 pb-3 pt-2">
                         <div className="-mt-8 flex shrink-0 flex-col items-center gap-1">
                           <button
                             type="button"
@@ -263,7 +289,8 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                             <img
                               src={avatarPreviewUrl ?? resolveUserAvatarUrl(user)}
                               alt={user.nickname || user.username}
-                              className="h-16 w-16 rounded-full border-4 border-[#232428]"
+                              className="h-16 w-16 rounded-full border-4"
+                              style={{ borderColor: "var(--wc-profile-cutout)" }}
                             />
                             <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 transition-colors group-hover:bg-black/50">
                               <Pencil size={15} className="text-white opacity-0 transition-opacity group-hover:opacity-100" />
@@ -317,21 +344,21 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                             type="color"
                             value={bannerColor}
                             onChange={(e) => setBannerColor(e.target.value)}
-                            className="h-9 w-9 cursor-pointer rounded border border-white/10 bg-transparent p-0.5"
+                            className="h-9 w-9 cursor-pointer rounded border border-white/[0.06] bg-transparent p-0.5"
                           />
                         </div>
                         <input
                           type="text"
                           value={bannerColor}
                           onChange={(e) => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) setBannerColor(e.target.value); }}
-                          className="w-28 rounded bg-[#1e1f22] px-2 py-1.5 font-mono text-sm text-white"
+                          className="wc-input-surface w-28 rounded-xl px-2 py-1.5 font-mono text-sm text-white"
                           maxLength={7}
                         />
                         {hasEyeDropper ? (
                           <button
                             type="button"
                             onClick={() => void pickColorWithEyeDropper("banner")}
-                            className="flex items-center gap-1.5 rounded bg-[#1e1f22] px-2.5 py-1.5 text-xs text-discord-muted hover:text-white"
+                            className="wc-input-surface flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs text-discord-muted hover:text-white"
                             title="Pick color from screen"
                           >
                             <Pipette size={13} /> Eyedropper
@@ -349,13 +376,13 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                           type="color"
                           value={accentColor || "#2b2d31"}
                           onChange={(e) => setAccentColor(e.target.value)}
-                          className="h-9 w-9 cursor-pointer rounded border border-white/10 bg-transparent p-0.5"
+                          className="h-9 w-9 cursor-pointer rounded border border-white/[0.06] bg-transparent p-0.5"
                         />
                         <input
                           type="text"
                           value={accentColor}
                           onChange={(e) => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) setAccentColor(e.target.value); }}
-                          className="w-28 rounded bg-[#1e1f22] px-2 py-1.5 font-mono text-sm text-white"
+                          className="wc-input-surface w-28 rounded-xl px-2 py-1.5 font-mono text-sm text-white"
                           placeholder="#2b2d31"
                           maxLength={7}
                         />
@@ -363,7 +390,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                           <button
                             type="button"
                             onClick={() => void pickColorWithEyeDropper("accent")}
-                            className="flex items-center gap-1.5 rounded bg-[#1e1f22] px-2.5 py-1.5 text-xs text-discord-muted hover:text-white"
+                            className="wc-input-surface flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs text-discord-muted hover:text-white"
                             title="Pick color from screen"
                           >
                             <Pipette size={13} /> Eyedropper
@@ -384,7 +411,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                     <label className="mb-3 block text-xs text-discord-muted">
                       Nickname
                       <input
-                        className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm text-white"
+                        className="wc-input-surface mt-1 w-full rounded-xl px-3 py-2 text-sm text-white"
                         value={nickname}
                         onChange={(e) => setNickname(e.target.value)}
                         maxLength={32}
@@ -394,7 +421,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                     <label className="mb-3 block text-xs text-discord-muted">
                       Custom Status
                       <input
-                        className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm text-white"
+                        className="wc-input-surface mt-1 w-full rounded-xl px-3 py-2 text-sm text-white"
                         value={customStatus}
                         onChange={(e) => setCustomStatus(e.target.value)}
                         placeholder="What are you up to?"
@@ -404,7 +431,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                     <label className="mb-3 block text-xs text-discord-muted">
                       About Me
                       <textarea
-                        className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm text-white"
+                        className="wc-input-surface mt-1 w-full rounded-xl px-3 py-2 text-sm text-white"
                         rows={3}
                         value={aboutMe}
                         onChange={(e) => setAboutMe(e.target.value)}
@@ -416,6 +443,68 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                   </>
                 )}
 
+                {/* APPEARANCE */}
+                {tab === "appearance" && (
+                  <>
+                    <h2 className="mb-4 text-lg font-semibold">Appearance</h2>
+
+                    <div className="mb-5 rounded-2xl border border-white/[0.06] bg-black/20 p-4 backdrop-blur-sm">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="text-sm font-semibold text-white">Theme</h3>
+                          <p className="mt-1 text-xs leading-5 text-discord-muted">Choose a curated Windcord look. Theme changes apply instantly.</p>
+                        </div>
+                        <span className="rounded-full border border-white/[0.06] bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-discord-muted">Live</span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        {WINDCORD_THEME_OPTIONS.map((option) => {
+                          const active = theme === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => handleThemeSelect(option.id)}
+                              className={`rounded-2xl border p-3 text-left transition ${active ? "border-white/[0.08] bg-white/[0.07] shadow-[0_14px_30px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.05)]" : "border-white/[0.04] bg-white/[0.03] hover:border-white/[0.06] hover:bg-white/[0.05]"}`}
+                            >
+                              <div className="mb-3 flex gap-1.5">
+                                {option.preview.map((color, index) => (
+                                  <span
+                                    key={`${option.id}-${index}`}
+                                    className="h-10 flex-1 rounded-xl"
+                                    style={{ background: color }}
+                                  />
+                                ))}
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-semibold text-white">{option.label}</p>
+                                {active ? <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#dce6ff]">Active</span> : null}
+                              </div>
+                              <p className="mt-1 text-xs leading-5 text-discord-muted">{option.description}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="mb-3 rounded-2xl border border-white/[0.06] bg-black/20 p-4 backdrop-blur-sm">
+                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-discord-muted">Notification Sound</span>
+                      <div className="mt-3 flex gap-1 rounded-2xl border border-white/[0.04] bg-black/20 p-1.5">
+                        {(["default", "alt"] as const).map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => { setNotifSound(opt); }}
+                            className={`flex-1 rounded-xl py-2 text-xs font-medium transition ${notifSound === opt ? "bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)]" : "text-discord-muted hover:bg-white/[0.05] hover:text-white"}`}
+                          >
+                            {opt === "default" ? "Default" : "Alternate"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 {/* ACCOUNT */}
                 {tab === "account" && (
                   <>
@@ -424,7 +513,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                     <label className="mb-3 block text-xs text-discord-muted">
                       Username
                       <input
-                        className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm text-white"
+                        className="wc-input-surface mt-1 w-full rounded-xl px-3 py-2 text-sm text-white"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         pattern="[A-Za-z0-9]{2,32}"
@@ -436,7 +525,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                     <label className="mb-3 block text-xs text-discord-muted">
                       Status
                       <select
-                        className="mt-1 w-full rounded bg-[#1e1f22] px-2 py-2 text-sm text-white"
+                        className="wc-input-surface mt-1 w-full rounded-xl px-3 py-2 text-sm text-white"
                         value={status}
                         onChange={(e) => setStatus(e.target.value as UserStatus)}
                       >
@@ -447,21 +536,6 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                       </select>
                     </label>
 
-                    <div className="mb-3">
-                      <span className="text-xs text-discord-muted">Notification Sound</span>
-                      <div className="mt-1 flex gap-1 rounded bg-[#1e1f22] p-1">
-                        {(["default", "alt"] as const).map((opt) => (
-                          <button
-                            key={opt}
-                            type="button"
-                            onClick={() => { setNotifSound(opt); }}
-                            className={`flex-1 rounded py-1.5 text-xs font-medium transition-colors ${notifSound === opt ? "bg-discord-blurple text-white" : "text-discord-muted hover:text-white"}`}
-                          >
-                            {opt === "default" ? "Default" : "Alternate"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
                   </>
                 )}
 
@@ -470,19 +544,19 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                   <>
                     <h2 className="mb-4 text-lg font-semibold">Security</h2>
 
-                    <div className="mb-4 rounded-lg border border-white/10 bg-[#232428] p-4">
+                    <div className="mb-4 rounded-2xl border border-white/[0.06] bg-black/20 p-4 backdrop-blur-sm">
                       <h3 className="text-sm font-semibold text-white">Recovery Key</h3>
                       <p className="mt-1 text-xs leading-5 text-discord-muted">
                         Save a recovery key somewhere safe. You can use it to reset your password if you get locked out.
                       </p>
                       {recoveryCode ? (
-                        <div className="mt-3 rounded bg-[#111214] px-3 py-2 font-mono text-sm tracking-[0.18em] text-white">{recoveryCode}</div>
+                        <div className="mt-3 rounded-xl border border-white/[0.06] bg-[#111214] px-3 py-2 font-mono text-sm tracking-[0.18em] text-white">{recoveryCode}</div>
                       ) : null}
                       {recoveryError ? <p className="mt-2 text-xs text-[#ffb3b8]">{recoveryError}</p> : null}
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          className="rounded bg-discord-blurple px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-60"
+                          className="rounded-xl bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-60"
                           onClick={() => void onGenerateRecoveryCode()}
                           disabled={recoveryBusy}
                         >
@@ -491,7 +565,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                         {recoveryCode ? (
                           <button
                             type="button"
-                            className="rounded bg-[#3a3d45] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#4a4e59]"
+                            className="rounded-xl bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/[0.12]"
                             onClick={() => void navigator.clipboard.writeText(recoveryCode)}
                           >
                             Copy Key
@@ -500,14 +574,14 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                       </div>
                     </div>
 
-                    <div className="rounded-lg border border-[#ed4245]/30 bg-[#232428] p-4">
+                    <div className="rounded-2xl border border-[#ed4245]/30 bg-[rgba(52,20,24,0.44)] p-4 backdrop-blur-sm">
                       <h3 className="text-sm font-semibold text-[#ed4245]">Danger Zone</h3>
                       <p className="mt-1 text-xs leading-5 text-discord-muted">Permanently delete your account and all your data.</p>
                       <div className="mt-3">
                         {!confirmDelete ? (
                           <button
                             type="button"
-                            className="rounded bg-[#ed4245] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#c0383b]"
+                            className="rounded-xl bg-[#ed4245] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#c0383b]"
                             onClick={() => setConfirmDelete(true)}
                           >
                             Delete Account
@@ -517,7 +591,7 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                             <span className="text-xs text-[#ffb3b8]">This is permanent.</span>
                             <button
                               type="button"
-                              className="rounded bg-[#ed4245] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#c0383b] disabled:opacity-60"
+                              className="rounded-xl bg-[#ed4245] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#c0383b] disabled:opacity-60"
                               onClick={() => void onDeleteAccount()}
                               disabled={deleting}
                             >
@@ -534,10 +608,10 @@ const SettingsModal = ({ open, onClose }: Props): JSX.Element | null => {
                 {/* Footer buttons */}
                 <div className="mt-auto flex items-center justify-end gap-2 pt-6">
                   {saved ? <span className="text-xs text-[#23a55a]">Saved</span> : null}
-                  <button type="button" className="rounded px-3 py-1.5 text-sm text-discord-muted hover:text-white" onClick={onClose}>
+                  <button type="button" className="rounded-xl px-3 py-1.5 text-sm text-discord-muted hover:bg-white/[0.04] hover:text-white" onClick={onClose}>
                     Cancel
                   </button>
-                  <button type="submit" className="rounded bg-discord-blurple px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110">
+                  <button type="submit" className="rounded-xl bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110">
                     Save
                   </button>
                 </div>

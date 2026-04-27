@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createDMMessage, createOrGetDM, deleteDMMessage, editDMMessage, listDMMessages, listDMs } from "../controllers/dmController";
+import { createDMMessage, createOrGetDM, deleteDMMessage, editDMMessage, getDMMessageContext, listDMMessages, listDMs, searchDMMessages } from "../controllers/dmController";
 import { toggleDMReaction } from "../controllers/dmController";
 import { authMiddleware } from "../middleware/auth";
 import { uploadAttachment } from "../middleware/upload";
@@ -12,7 +12,9 @@ router.use(authMiddleware);
 
 router.get("/", listDMs);
 router.post("/", createOrGetDM);
+router.get("/:dmChannelId/messages/search", searchDMMessages);
 router.get("/:dmChannelId/messages", listDMMessages);
+router.get("/:dmChannelId/messages/:messageId/context", getDMMessageContext);
 router.post(
 	"/:dmChannelId/messages",
 	uploadAttachment.single("attachment"),

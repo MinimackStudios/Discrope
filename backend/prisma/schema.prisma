@@ -48,7 +48,9 @@ model AdminEvent {
 model Server {
   id          String           @id @default(cuid())
   name        String
+  description String           @default("")
   iconUrl     String?
+  bannerImageUrl String?
   ownerId     String
   inviteCode  String           @unique
   owner       User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -71,14 +73,15 @@ model ServerBan {
 }
 
 model ServerMember {
-  userId    String
-  serverId  String
-  nickname  String?
-  nickColor String?
-  role      String     @default("MEMBER")
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  server    Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
-  createdAt DateTime   @default(now())
+  userId      String
+  serverId    String
+  nickname    String?
+  nickColor   String?
+  role        String     @default("MEMBER")
+  permissions String     @default("{}") // JSON string of permissions
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server      Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now())
 
   @@id([userId, serverId])
 }
@@ -93,17 +96,18 @@ model ChannelCategory {
 }
 
 model Channel {
-  id          String       @id @default(cuid())
-  name        String
-  type        String
-  readOnly    Boolean      @default(false)
-  order       Int          @default(0)
-  categoryId  String?
-  serverId    String
-  category    ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  server      Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
-  messages    Message[]
-  createdAt   DateTime     @default(now())
+  id            String       @id @default(cuid())
+  name          String
+  type          String
+  readOnly      Boolean      @default(false)
+  isAnnouncement Boolean     @default(false)
+  order         Int          @default(0)
+  categoryId    String?
+  serverId      String
+  category      ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  server        Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  messages      Message[]
+  createdAt     DateTime     @default(now())
 }
 
 model Message {

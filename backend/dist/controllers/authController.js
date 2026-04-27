@@ -66,7 +66,7 @@ const register = async (req, res) => {
     const passwordHash = await bcryptjs_1.default.hash(password, 10);
     const user = await prismaAny.user.create({
         data: { username: normalizedUsername, nickname: normalizedNickname || normalizedUsername, passwordHash },
-        select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true }
+        select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, bannerImageUrl: true, status: true, aboutMe: true, customStatus: true, bannerColor: true, accentColor: true, createdAt: true }
     });
     const recoveryCode = await issueRecoveryCode(user.id);
     const token = signToken(user.id, user.username);
@@ -104,9 +104,12 @@ const login = async (req, res) => {
             nickname: user.nickname,
             isDeleted: user.isDeleted,
             avatarUrl: user.avatarUrl,
+            bannerImageUrl: user.bannerImageUrl,
             status: user.status,
             aboutMe: user.aboutMe,
             customStatus: user.customStatus,
+            bannerColor: user.bannerColor,
+            accentColor: user.accentColor,
             createdAt: user.createdAt
         }
     });
@@ -156,7 +159,7 @@ const me = async (req, res) => {
     }
     const user = await prismaAny.user.findUnique({
         where: { id: userId },
-        select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, status: true, aboutMe: true, customStatus: true, createdAt: true }
+        select: { id: true, username: true, nickname: true, isDeleted: true, avatarUrl: true, bannerImageUrl: true, status: true, aboutMe: true, customStatus: true, bannerColor: true, accentColor: true, createdAt: true }
     });
     if (!user) {
         res.status(404).json({ message: "User not found" });

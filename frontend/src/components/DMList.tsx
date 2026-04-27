@@ -31,11 +31,11 @@ type Props = {
 
 const DMList = ({ dms, me, activeDMId, onOpenDM, onRemoveDM, unreadDMs, fullHeight = false }: Props): JSX.Element => {
   return (
-    <section className={`${fullHeight ? "flex min-h-0 flex-1 flex-col bg-[#2b2d31]" : "border-t border-black/20 p-2"}`}>
-      <div className={`${fullHeight ? "border-b border-black/20 bg-[#313338] p-2" : ""}`}>
+    <section className={`${fullHeight ? "flex min-h-0 flex-1 flex-col bg-transparent" : "border-t border-black/20 p-2"}`}>
+      <div className={`${fullHeight ? "wc-sidebar-header p-2" : ""}`}>
         <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Direct Messages</p>
       </div>
-      <div className={`${fullHeight ? "discord-scrollbar min-h-0 flex-1 overflow-y-auto bg-[#2b2d31] p-2" : "mt-2"}`}>
+      <div className={`${fullHeight ? "discord-scrollbar min-h-0 flex-1 overflow-y-auto bg-transparent p-2.5" : "mt-2"}`}>
         <div className="space-y-1">
           {dms.map((dm) => {
             const other = dm.participants.find((p) => p.id !== me?.id) ?? null;
@@ -49,11 +49,11 @@ const DMList = ({ dms, me, activeDMId, onOpenDM, onRemoveDM, unreadDMs, fullHeig
               <button
                 key={dm.id}
                 onClick={() => onOpenDM(dm.id)}
-                className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm ${
+                className={`flex w-full items-center gap-2 rounded-xl border px-2.5 py-2 text-sm transition ${
                   activeDMId === dm.id
-                    ? "bg-[#404249] text-white"
-                    : "text-discord-muted hover:bg-[#35373c] hover:text-discord-text"
-                }`}
+                    ? "border-white/[0.06] text-white"
+                    : "border-transparent text-discord-muted hover:border-white/[0.03] hover:bg-white/[0.04] hover:text-discord-text"
+                }`} style={activeDMId === dm.id ? { background: "var(--wc-dm-active-bg)" } : undefined}
               >
                 <div className="relative h-8 w-8 shrink-0">
                   <img
@@ -63,7 +63,7 @@ const DMList = ({ dms, me, activeDMId, onOpenDM, onRemoveDM, unreadDMs, fullHeig
                   />
                   {other ? (
                     <span className="absolute -bottom-1 -right-0.5">
-                      <StatusDot status={other.status} sizeClassName="h-2.5 w-2.5" cutoutClassName="ring-2 ring-[#232428]" />
+                      <StatusDot status={other.status} sizeClassName="h-2.5 w-2.5" cutoutColor="var(--wc-sidebar-bottom)" ringColor="var(--wc-sidebar-bottom)" ringWidth={2} />
                     </span>
                   ) : null}
                 </div>
@@ -82,7 +82,7 @@ const DMList = ({ dms, me, activeDMId, onOpenDM, onRemoveDM, unreadDMs, fullHeig
                     event.stopPropagation();
                     onRemoveDM(dm.id);
                   }}
-                  className="shrink-0 rounded p-1 text-discord-muted hover:bg-[#3a3d45] hover:text-white"
+                  className="shrink-0 rounded-lg p-1 text-discord-muted transition hover:bg-white/6 hover:text-white"
                   title="Remove from list"
                   aria-label="Remove from list"
                 >

@@ -1,9 +1,18 @@
 import { ChevronDown, FolderPlus, Hash, Lock, LogOut, Pencil, Plus, Settings, Trash2 } from "lucide-react";
+import { resolveMediaUrl } from "../lib/media";
+
+// Discord-style filled megaphone/speaker icon for announcement channels
+const AnnouncementIcon = ({ size = 16, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 14 14" fill="currentColor" className={className}>
+    <path fillRule="evenodd" clipRule="evenodd" d="M7.933.767a.75.75 0 0 0-1.5 0v.754a.75.75 0 0 0 1.5 0zM6.595 2.928a.75.75 0 0 1 1.024.275l3.858 6.681a.75.75 0 0 1-1.299.75l-.055-.096l-3.092.718a2.171 2.171 0 0 1-3.97 1.664l-.002-.003l-.376-.651l-1.454.337a.5.5 0 0 1-.546-.237l-.609-1.055a.5.5 0 0 1 .068-.591l6.235-6.67l-.057-.097a.75.75 0 0 1 .275-1.025M4.21 11.911l1.357-.315a.671.671 0 0 1-1.21.57zm9.78-5.088a.75.75 0 0 1-.75.75h-.754a.75.75 0 0 1 0-1.5h.753a.75.75 0 0 1 .75.75Zm-12.108.75a.75.75 0 1 0 0-1.5h-.754a.75.75 0 1 0 0 1.5zm2.182-3.868a.75.75 0 0 1-1.06 0l-.634-.634a.75.75 0 1 1 1.06-1.06l.635.633a.75.75 0 0 1 0 1.061Zm7.932-.634a.75.75 0 0 0-1.06-1.06l-.642.64a.75.75 0 1 0 1.061 1.061z" />
+  </svg>
+);
 import { useMemo, useState } from "react";
 import type { Channel, ChannelCategory } from "../types";
 
 type Props = {
   serverName: string;
+  serverBannerUrl?: string | null;
   categories: ChannelCategory[];
   channels: Channel[];
   activeChannelId: string | null;
@@ -27,6 +36,7 @@ type Props = {
 
 const ChannelList = ({
   serverName,
+  serverBannerUrl,
   categories,
   channels,
   activeChannelId,
@@ -53,6 +63,14 @@ const ChannelList = ({
   const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
   const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
   const [dragOverChannelId, setDragOverChannelId] = useState<string | null>(null);
+  const resolvedServerBannerUrl = resolveMediaUrl(serverBannerUrl);
+  const serverBannerStyle = resolvedServerBannerUrl
+    ? {
+        backgroundImage: `url(${resolvedServerBannerUrl})`,
+        backgroundPosition: "center",
+        backgroundSize: "cover"
+      }
+    : null;
 
   const grouped = useMemo(() => {
     const base = categories
@@ -149,26 +167,54 @@ const ChannelList = ({
   };
 
   return (
-    <aside className="flex h-full w-60 flex-col bg-discord-dark2 text-discord-text">
-      <div className="flex items-center justify-between border-b border-black/30 px-4 py-3 shadow-sm">
-        <h2 className="truncate text-sm font-bold">{serverName || "Channels"}</h2>
-        {canManage ? (
-          <div className="flex items-center gap-1">
-            <button className="text-discord-muted hover:text-white" onClick={onCreateCategory} title="Create category">
-              <FolderPlus size={15} />
-            </button>
-            <button className="text-discord-muted hover:text-white" onClick={onCreateChannel} title="Create channel">
-              <Plus size={16} />
-            </button>
+    <aside className="flex h-full w-60 flex-col bg-transparent text-discord-text">
+      <div className="wc-sidebar-header overflow-hidden">
+        {serverBannerStyle ? (
+          <div className="relative h-28" style={serverBannerStyle}>
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,12,16,0.18),rgba(10,12,16,0.62))]" />
+            <div className="relative flex h-full items-start justify-between gap-3 px-3.5 py-3">
+              <div className="min-w-0 text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]">
+                <h2 className="truncate text-[15px] font-bold leading-5">{serverName || "Channels"}</h2>
+              </div>
+
+              {canManage ? (
+                <div className="flex items-center gap-1 rounded-full bg-black/20 p-1 text-white/88 backdrop-blur-sm">
+                  <button className="rounded-full p-1.5 transition hover:bg-white/10 hover:text-white" onClick={onCreateCategory} title="Create category">
+                    <FolderPlus size={15} />
+                  </button>
+                  <button className="rounded-full p-1.5 transition hover:bg-white/10 hover:text-white" onClick={onCreateChannel} title="Create channel">
+                    <Plus size={16} />
+                  </button>
+                </div>
+              ) : (
+                <button className="rounded-full bg-black/20 p-2 text-white/88 backdrop-blur-sm transition hover:bg-black/30 hover:text-red-200" onClick={onLeaveServer} title="Leave server">
+                  <LogOut size={16} />
+                </button>
+              )}
+            </div>
           </div>
         ) : (
-          <button className="text-discord-muted hover:text-red-300" onClick={onLeaveServer} title="Leave server">
-            <LogOut size={16} />
-          </button>
+          <div className="flex items-center justify-between px-4 py-3">
+            <h2 className="truncate text-sm font-bold">{serverName || "Channels"}</h2>
+            {canManage ? (
+              <div className="flex items-center gap-1">
+                <button className="rounded-lg p-1.5 text-discord-muted transition hover:bg-white/5 hover:text-white" onClick={onCreateCategory} title="Create category">
+                  <FolderPlus size={15} />
+                </button>
+                <button className="rounded-lg p-1.5 text-discord-muted transition hover:bg-white/5 hover:text-white" onClick={onCreateChannel} title="Create channel">
+                  <Plus size={16} />
+                </button>
+              </div>
+            ) : (
+              <button className="rounded-lg p-1.5 text-discord-muted transition hover:bg-white/5 hover:text-red-300" onClick={onLeaveServer} title="Leave server">
+                <LogOut size={16} />
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      <div className="discord-scrollbar flex-1 overflow-y-auto px-2 py-3">
+      <div className="discord-scrollbar flex-1 overflow-y-auto px-2.5 py-3">
         {grouped.map(({ category, channels: categoryChannels }) => {
           const isCollapsed = collapsed[category.id];
           const isCategoryDragOver = dragOverCategoryId === category.id && draggedType === "channel";
@@ -200,7 +246,7 @@ const ChannelList = ({
             >
               <button
                 onClick={() => setCollapsed((prev) => ({ ...prev, [category.id]: !prev[category.id] }))}
-                className="flex w-full items-center gap-1 px-1 text-xs font-semibold tracking-wider text-discord-muted hover:text-discord-text"
+                className="flex w-full items-center gap-1 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-[0.16em] text-discord-muted transition hover:text-discord-text"
               >
                 <ChevronDown size={14} className={`transition ${isCollapsed ? "-rotate-90" : ""}`} />
                 {category.name}
@@ -254,39 +300,52 @@ const ChannelList = ({
                         onDragLeave={() => setDragOverChannelId(null)}
                         onDrop={(event) => handleChannelDrop(channel.id, category.id, event)}
                         onClick={() => onSelectChannel(channel.id)}
-                        className={`group/channel relative flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[15px] transition-colors ${
+                        className={`group/channel relative flex w-full items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-left text-[15px] transition ${
                           isChannelDragOver ? "ring-1 ring-discord-blurple" : ""
                         } ${
                           active
-                            ? "bg-[#404249] text-white"
+                            ? "border-white/[0.06] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
                             : hasUnread || hasMention
-                              ? "text-white hover:bg-[#35373c]"
-                              : "text-discord-muted hover:bg-[#35373c] hover:text-discord-text"
-                        }`}
+                              ? "border-transparent text-white hover:border-white/[0.04] hover:bg-white/[0.05]"
+                              : "border-transparent text-discord-muted hover:border-white/[0.03] hover:bg-white/[0.04] hover:text-discord-text"
+                        }`} style={active ? { background: "var(--wc-channel-active-bg)" } : undefined}
                       >
                         {!active && hasUnread && !hasMention ? (
                           <span className="absolute -left-2.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-white" />
                         ) : null}
-                        <Hash size={16} className="shrink-0" />
+                        {channel.isAnnouncement ? (
+                          <AnnouncementIcon size={16} className="shrink-0" />
+                        ) : (
+                          <Hash size={16} className="shrink-0" />
+                        )}
                         <span className="min-w-0 flex-1 truncate">{channel.name}</span>
                         {channel.readOnly ? (
                           <Lock size={11} className="shrink-0 text-discord-muted" />
                         ) : null}
                         {canManage ? (
-                          <button
+                          <div
+                            role="button"
+                            tabIndex={0}
                             title="Channel settings"
-                            className="shrink-0 rounded p-0.5 opacity-0 group-hover/channel:opacity-60 hover:!opacity-100"
+                            className="shrink-0 rounded-lg p-1 opacity-0 transition group-hover/channel:opacity-60 hover:!opacity-100 hover:bg-white/6 cursor-pointer"
                             onClick={(event) => {
                               event.stopPropagation();
                               onOpenChannelSettings?.(channel);
                             }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onOpenChannelSettings?.(channel);
+                              }
+                            }}
                           >
                             <Settings size={13} />
-                          </button>
+                          </div>
                         ) : null}
                         {hasMention ? (
                           <span className="shrink-0 rounded-full bg-[#ed4245] px-1.5 text-[10px] font-semibold text-white">
-                            1
+                            {Math.min(mentionUnread, 99)}
                           </span>
                         ) : null}
                       </button>

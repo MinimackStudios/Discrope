@@ -79,7 +79,7 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16, ease: "easeOut" }}
-          className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(6,8,12,0.74)] p-4 backdrop-blur-sm"
           onPointerDown={onBackdropPointerDown}
           onClick={onBackdropClick}
         >
@@ -88,27 +88,27 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.97 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="w-full max-w-sm overflow-hidden rounded-xl bg-[#2b2d31]"
+            className="wc-modal-card w-full max-w-sm overflow-hidden rounded-[24px]"
             onClick={(e) => e.stopPropagation()}
           >
         {profileUser.bannerImageUrl
           ? <img src={resolveMediaUrl(profileUser.bannerImageUrl) ?? ""} alt="" className="h-24 w-full object-cover" />
-          : <div className="h-24" style={{ background: profileUser.bannerColor ?? "linear-gradient(to right, #5865f2, #3d4ddc)" }} />
+          : <div className="h-24" style={{ background: profileUser.bannerColor ?? "linear-gradient(135deg, var(--wc-active-top), var(--wc-active-bottom))" }} />
         }
-        <div className="relative p-4" style={accentBg ? { backgroundColor: accentBg } : undefined}>
+        <div className="relative p-4" style={accentBg ? { backgroundColor: accentBg } : { background: "linear-gradient(180deg, rgba(18,22,31,0.72), rgba(12,15,23,0.88))" }}>
           <div className="absolute -top-10 h-20 w-20">
             <img
               src={resolveUserAvatarUrl(profileUser)}
               alt={displayName}
               className="h-20 w-20 rounded-full border-4"
-              style={{ borderColor: accentBg ?? "#2b2d31" }}
+              style={{ borderColor: accentBg ?? "var(--wc-profile-cutout)" }}
             />
             <span className="absolute bottom-1 right-1">
               <StatusDot
                 status={profileUser.status}
                 sizeClassName="h-4 w-4"
-                cutoutColor={accentBg ?? "#2b2d31"}
-                ringColor={accentBg ?? "#2b2d31"}
+                cutoutColor={accentBg ?? "var(--wc-profile-cutout)"}
+                ringColor={accentBg ?? "var(--wc-profile-cutout)"}
               />
             </span>
           </div>
@@ -119,12 +119,12 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
             <p className="text-xs text-discord-muted">@{profileUser.username}</p>
             <p className="text-xs text-discord-muted">{profileUser.customStatus?.trim() || formatStatusLabel(profileUser.status)}</p>
 
-            <div className={`mt-4 rounded-md p-3 ${accentBg ? "bg-black/20" : "bg-[#1e1f22]"}`}>
+            <div className={`mt-4 rounded-2xl border border-white/[0.05] p-3 ${accentBg ? "bg-black/20" : "bg-black/20 backdrop-blur-sm"}`}>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">About Me</p>
               <p className="mt-1 whitespace-pre-wrap text-sm text-discord-text">{profileUser.aboutMe || "No bio set."}</p>
 
               {diskchatMemberSince || serverJoinDate || friendsSince ? (
-                <div className="mt-4 border-t border-white/10 pt-4">
+                <div className="mt-4 border-t border-white/[0.06] pt-4">
                   {diskchatMemberSince ? (
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-discord-muted">Windcord Member Since</p>
@@ -148,7 +148,7 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
             </div>
 
             {mutualServers.length > 0 ? (
-              <div className={`mt-3 rounded-md ${accentBg ? "bg-black/20" : "bg-[#1e1f22]"}`}>
+              <div className={`mt-3 rounded-2xl border border-white/[0.05] ${accentBg ? "bg-black/20" : "bg-black/20 backdrop-blur-sm"}`}>
                 <button
                   className="flex w-full items-center justify-between p-3 text-left"
                   onClick={() => setServersExpanded((v) => !v)}
@@ -168,7 +168,7 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
                       <div key={server.id} className="flex items-center gap-2">
                         {server.iconUrl
                           ? <img src={resolveMediaUrl(server.iconUrl) ?? ""} alt={server.name} className="h-8 w-8 rounded-full object-cover flex-shrink-0" />
-                          : <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-discord-blurple text-xs font-bold text-white">{server.name.charAt(0).toUpperCase()}</div>
+                          : <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] text-xs font-bold text-white">{server.name.charAt(0).toUpperCase()}</div>
                         }
                         <span className="truncate text-sm text-discord-text">{server.name}</span>
                       </div>
@@ -185,17 +185,17 @@ const UserProfileModal = ({ user, open, serverName, serverMemberSince, me, frien
                     <span className="flex-1 rounded bg-[#3a3d45] px-3 py-1.5 text-center text-sm text-discord-muted">Friend request sent</span>
                   ) : (
                     <button
-                      className="flex-1 rounded bg-discord-blurple px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#4752c4]"
+                      className="wc-accent-button flex-1 rounded-xl px-3 py-1.5 text-sm font-semibold text-white"
                       onClick={() => void onAddFriend(profileUser.username)}
                     >
                       Add Friend
                     </button>
                   )
                 ) : (
-                  <span className="flex-1 rounded bg-[#3a3d45] px-3 py-1.5 text-center text-sm text-discord-muted">Friends</span>
+                  <span className="wc-secondary-button flex-1 rounded-xl px-3 py-1.5 text-center text-sm text-discord-muted">Friends</span>
                 )}
                 <button
-                  className="flex-1 rounded bg-[#3a3d45] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#4a4e59]"
+                  className="wc-secondary-button flex-1 rounded-xl px-3 py-1.5 text-sm font-semibold text-white"
                   onClick={async () => {
                     await onStartDM(profileUser.id);
                     onClose();

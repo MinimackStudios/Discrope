@@ -414,19 +414,28 @@ type ChatState = {
   dismissNotice: (id: string) => void;
   lastUnreadMessageIdByChannel: Record<string, string>;
   channelOpenFocusMessageId: string | null;
+  channelOpenFocusMode: "unread" | "search" | null;
   dmChannelOpenFocusMessageId: string | null;
+  dmChannelOpenFocusMode: "unread" | "search" | null;
   hasOlderMessages: boolean;
+  hasNewerMessages: boolean;
   hasOlderDMMessages: boolean;
+  hasNewerDMMessages: boolean;
   loadingOlderMessages: boolean;
+  loadingNewerMessages: boolean;
   loadServers: () => Promise<void>;
   setActiveServer: (id: string) => Promise<void>;
   setActiveChannel: (id: string) => Promise<void>;
+  openChannelMessage: (channelId: string, messageId: string) => Promise<void>;
+  openDMMessage: (dmChannelId: string, messageId: string) => Promise<void>;
   setActiveDM: (id: string) => Promise<void>;
   openHome: () => Promise<void>;
   loadMessages: (channelId: string) => Promise<void>;
   loadDMMessages: (dmChannelId: string, previousUnreadCount?: number) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
+  loadNewerMessages: () => Promise<void>;
   loadOlderDMMessages: () => Promise<void>;
+  loadNewerDMMessages: () => Promise<void>;
   sendMessage: (content: string, replyToId?: string, attachment?: File | null) => Promise<void>;
   sendDMMessage: (content: string, replyToId?: string, attachment?: File | null) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
@@ -481,10 +490,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   lastChannelByServer: persistedLastChannelByServer,
   lastUnreadMessageIdByChannel: persistedLastUnreadMessageIds,
   channelOpenFocusMessageId: null,
+  channelOpenFocusMode: null,
   dmChannelOpenFocusMessageId: null,
+  dmChannelOpenFocusMode: null,
   hasOlderMessages: false,
+  hasNewerMessages: false,
   hasOlderDMMessages: false,
+  hasNewerDMMessages: false,
   loadingOlderMessages: false,
+  loadingNewerMessages: false,
   loadServers: async () => {
     const socket = getSocket();
     const previousServer = get().servers.find((s) => s.id === get().activeServerId);
@@ -559,8 +573,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeChannelId: null,
       messages: [],
       hasOlderMessages: false,
+      hasNewerMessages: false,
       loadingOlderMessages: false,
-      channelOpenFocusMessageId: null
+      loadingNewerMessages: false,
+      channelOpenFocusMessageId: null,
+      channelOpenFocusMode: null
     });
 
     const { data } = await api.get(`/servers/${id}`);
@@ -622,9 +639,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         activeChannelId: id,
         messages: [],
         hasOlderMessages: false,
+        hasNewerMessages: false,
         loadingOlderMessages: false,
+        loadingNewerMessages: false,
         lastChannelByServer: nextLastChannelByServer,
-        channelOpenFocusMessageId: state.lastUnreadMessageIdByChannel[id] ?? null
+        channelOpenFocusMessageId: state.lastUnreadMessageIdByChannel[id] ?? null,
+        channelOpenFocusMode: null
       };
     });
     if (activeServerId) {
@@ -637,6 +657,112 @@ export const useChatStore = create<ChatState>((set, get) => ({
     persistView(get().activeServerId, id, "SERVER", previousDMId);
     await get().loadMessages(id);
   },
+  openChannelMessage: async (channelId, messageId) => {
+    const applyFocusMessage = (): void => {
+      if (get().channelOpenFocusMessageId === messageId) {
+        set({ channelOpenFocusMessageId: null, channelOpenFocusMode: null });
+        queueMicrotask(() => {
+          const state = get();
+          if (state.mode === "SERVER" && state.activeChannelId === channelId) {
+            set({ channelOpenFocusMessageId: messageId, channelOpenFocusMode: "search" });
+          }
+        });
+        return;
+      }
+
+      set({ channelOpenFocusMessageId: messageId, channelOpenFocusMode: "search" });
+    };
+
+    const sameChannel = get().mode === "SERVER" && get().activeChannelId === channelId;
+    if (!sameChannel) {
+      await get().setActiveChannel(channelId);
+    }
+
+    if (get().messages.some((message) => message.id === messageId)) {
+      applyFocusMessage();
+      return;
+    }
+
+    try {
+      const { data } = await api.get(`/chat/channels/${channelId}/messages/${messageId}/context`);
+      const msgs = data.messages as Message[];
+      const lastMsg = msgs[msgs.length - 1];
+
+      if (lastMsg) {
+        persistLastSeenByChannel({ ...loadLastSeenByChannel(), [channelId]: lastMsg.id });
+      }
+
+      const nextUnread = { ...get().unreadByChannel, [channelId]: 0 };
+      const nextMentionUnread = { ...get().mentionUnreadByChannel, [channelId]: 0 };
+      const nextUnreadMessageIds = { ...get().lastUnreadMessageIdByChannel };
+      delete nextUnreadMessageIds[channelId];
+      persistUnreads(nextUnread, nextMentionUnread);
+      persistLastUnreadMessageIds(nextUnreadMessageIds);
+
+      set({
+        messages: msgs,
+        hasOlderMessages: data.hasOlder === true,
+        hasNewerMessages: data.hasNewer === true,
+        loadingNewerMessages: false,
+        unreadByChannel: nextUnread,
+        mentionUnreadByChannel: nextMentionUnread,
+        lastUnreadMessageIdByChannel: nextUnreadMessageIds,
+        channelOpenFocusMessageId: null,
+        channelOpenFocusMode: null
+      });
+      applyFocusMessage();
+    } catch {
+      applyFocusMessage();
+    }
+  },
+  openDMMessage: async (dmChannelId, messageId) => {
+    const applyFocusMessage = (): void => {
+      if (get().dmChannelOpenFocusMessageId === messageId) {
+        set({ dmChannelOpenFocusMessageId: null, dmChannelOpenFocusMode: null });
+        queueMicrotask(() => {
+          const state = get();
+          if (state.mode === "DM" && state.activeDMId === dmChannelId) {
+            set({ dmChannelOpenFocusMessageId: messageId, dmChannelOpenFocusMode: "search" });
+          }
+        });
+        return;
+      }
+
+      set({ dmChannelOpenFocusMessageId: messageId, dmChannelOpenFocusMode: "search" });
+    };
+
+    const sameDM = get().mode === "DM" && get().activeDMId === dmChannelId;
+    if (!sameDM) {
+      await get().setActiveDM(dmChannelId);
+    }
+
+    if (get().dmMessages.some((message) => message.id === messageId)) {
+      applyFocusMessage();
+      return;
+    }
+
+    try {
+      const { data } = await api.get(`/dms/${dmChannelId}/messages/${messageId}/context`);
+      const msgs = data.messages as DMMessage[];
+      const lastMsg = msgs[msgs.length - 1];
+
+      if (lastMsg) {
+        persistLastSeenByDM({ ...loadLastSeenByDM(), [dmChannelId]: lastMsg.id });
+      }
+
+      set({
+        dmMessages: msgs,
+        hasOlderDMMessages: data.hasOlder === true,
+        hasNewerDMMessages: data.hasNewer === true,
+        loadingNewerMessages: false,
+        dmChannelOpenFocusMessageId: null,
+        dmChannelOpenFocusMode: null
+      });
+      applyFocusMessage();
+    } catch {
+      applyFocusMessage();
+    }
+  },
   setActiveDM: async (id) => {
     const previousDMId = get().activeDMId;
     const socket = getSocket();
@@ -646,13 +772,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const previousUnreadCount = get().unreadDMs[id] ?? 0;
     set((state) => {
       if (!state.hiddenDMIds[id]) {
-        return { mode: "DM", activeDMId: id, activeChannelId: null, messages: [], dmMessages: [], hasOlderDMMessages: false, loadingOlderMessages: false, channelOpenFocusMessageId: null, dmChannelOpenFocusMessageId: null };
+        return { mode: "DM", activeDMId: id, activeChannelId: null, messages: [], dmMessages: [], hasOlderMessages: false, hasNewerMessages: false, hasOlderDMMessages: false, hasNewerDMMessages: false, loadingOlderMessages: false, loadingNewerMessages: false, channelOpenFocusMessageId: null, channelOpenFocusMode: null, dmChannelOpenFocusMessageId: null, dmChannelOpenFocusMode: null };
       }
 
       const nextHidden = { ...state.hiddenDMIds };
       delete nextHidden[id];
       persistHiddenDMs(nextHidden);
-      return { mode: "DM", activeDMId: id, activeChannelId: null, messages: [], dmMessages: [], hasOlderDMMessages: false, loadingOlderMessages: false, hiddenDMIds: nextHidden, channelOpenFocusMessageId: null, dmChannelOpenFocusMessageId: null };
+      return { mode: "DM", activeDMId: id, activeChannelId: null, messages: [], dmMessages: [], hasOlderMessages: false, hasNewerMessages: false, hasOlderDMMessages: false, hasNewerDMMessages: false, loadingOlderMessages: false, loadingNewerMessages: false, hiddenDMIds: nextHidden, channelOpenFocusMessageId: null, channelOpenFocusMode: null, dmChannelOpenFocusMessageId: null, dmChannelOpenFocusMode: null };
     });
     persistView(get().activeServerId, null, "DM", id);
     get().markDMRead(id);
@@ -664,7 +790,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const activeDMId = get().activeDMId;
 
     persistUnreadDMs({});
-    set({ mode: "DM", activeChannelId: null, messages: [], channelOpenFocusMessageId: null, dmChannelOpenFocusMessageId: null, unreadDMs: {} });
+    set({ mode: "DM", activeChannelId: null, messages: [], hasOlderMessages: false, hasNewerMessages: false, hasNewerDMMessages: false, loadingNewerMessages: false, channelOpenFocusMessageId: null, channelOpenFocusMode: null, dmChannelOpenFocusMessageId: null, dmChannelOpenFocusMode: null, unreadDMs: {} });
     persistView(get().activeServerId, null, "DM", activeDMId);
 
     if (activeDMId) {
@@ -711,10 +837,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       messages: msgs,
       hasOlderMessages: data.hasOlder === true,
+      hasNewerMessages: data.hasNewer === true,
+      loadingNewerMessages: false,
       unreadByChannel: nextUnread,
       mentionUnreadByChannel: nextMentionUnread,
       lastUnreadMessageIdByChannel: nextUnreadMessageIds,
-      channelOpenFocusMessageId: focusMessageId
+      channelOpenFocusMessageId: focusMessageId,
+      channelOpenFocusMode: focusMessageId ? "unread" : null
     });
   },
   loadDMMessages: async (dmChannelId, previousUnreadCount = 0) => {
@@ -744,7 +873,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       persistLastSeenByDM({ ...loadLastSeenByDM(), [dmChannelId]: lastMsg.id });
     }
 
-    set({ dmMessages: msgs, hasOlderDMMessages: data.hasOlder === true, dmChannelOpenFocusMessageId: focusMessageId });
+    set({
+      dmMessages: msgs,
+      hasOlderDMMessages: data.hasOlder === true,
+      hasNewerDMMessages: data.hasNewer === true,
+      loadingNewerMessages: false,
+      dmChannelOpenFocusMessageId: focusMessageId,
+      dmChannelOpenFocusMode: focusMessageId ? "unread" : null
+    });
   },
   loadOlderMessages: async () => {
     const channelId = get().activeChannelId;
@@ -758,13 +894,52 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ loadingOlderMessages: true });
     try {
       const { data } = await api.get(`/chat/channels/${channelId}/messages?before=${firstMessageId}`);
-      set((state) => ({
-        messages: [...(data.messages as Message[]).filter((m) => !state.messages.some((existing) => existing.id === m.id)), ...state.messages],
-        hasOlderMessages: data.hasOlder === true,
-        loadingOlderMessages: false
-      }));
+      set((state) => {
+        const olderMessages = (data.messages as Message[]).filter((message) => !state.messages.some((existing) => existing.id === message.id));
+        const mergedMessages = [...olderMessages, ...state.messages];
+        const maxWindowSize = Math.max(state.messages.length, olderMessages.length * 3);
+        const trimmedNewestMessages = mergedMessages.length > maxWindowSize;
+
+        return {
+          // Keep a rolling upward history window so manual scrolling doesn't retain the full latest slice forever.
+          messages: trimmedNewestMessages ? mergedMessages.slice(0, maxWindowSize) : mergedMessages,
+          hasOlderMessages: data.hasOlder === true,
+          hasNewerMessages: state.hasNewerMessages || trimmedNewestMessages,
+          loadingOlderMessages: false
+        };
+      });
     } catch {
       set({ loadingOlderMessages: false });
+    }
+  },
+  loadNewerMessages: async () => {
+    const channelId = get().activeChannelId;
+    if (!channelId || get().loadingNewerMessages || !get().hasNewerMessages) {
+      return;
+    }
+
+    const lastMessageId = get().messages[get().messages.length - 1]?.id;
+    if (!lastMessageId) {
+      return;
+    }
+
+    set({ loadingNewerMessages: true });
+    try {
+      const { data } = await api.get(`/chat/channels/${channelId}/messages?after=${lastMessageId}`);
+      const appendedMessages = (data.messages as Message[]);
+      const lastAppendedMessage = appendedMessages[appendedMessages.length - 1];
+
+      if (lastAppendedMessage) {
+        persistLastSeenByChannel({ ...loadLastSeenByChannel(), [channelId]: lastAppendedMessage.id });
+      }
+
+      set((state) => ({
+        messages: [...state.messages, ...appendedMessages.filter((message) => !state.messages.some((existing) => existing.id === message.id))],
+        hasNewerMessages: data.hasNewer === true,
+        loadingNewerMessages: false
+      }));
+    } catch {
+      set({ loadingNewerMessages: false });
     }
   },
   loadOlderDMMessages: async () => {
@@ -779,13 +954,51 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ loadingOlderMessages: true });
     try {
       const { data } = await api.get(`/dms/${dmChannelId}/messages?before=${firstMessageId}`);
-      set((state) => ({
-        dmMessages: [...(data.messages as DMMessage[]).filter((m) => !state.dmMessages.some((existing) => existing.id === m.id)), ...state.dmMessages],
-        hasOlderDMMessages: data.hasOlder === true,
-        loadingOlderMessages: false
-      }));
+      set((state) => {
+        const olderMessages = (data.messages as DMMessage[]).filter((message) => !state.dmMessages.some((existing) => existing.id === message.id));
+        const mergedMessages = [...olderMessages, ...state.dmMessages];
+        const maxWindowSize = Math.max(state.dmMessages.length, olderMessages.length * 3);
+        const trimmedNewestMessages = mergedMessages.length > maxWindowSize;
+
+        return {
+          dmMessages: trimmedNewestMessages ? mergedMessages.slice(0, maxWindowSize) : mergedMessages,
+          hasOlderDMMessages: data.hasOlder === true,
+          hasNewerDMMessages: state.hasNewerDMMessages || trimmedNewestMessages,
+          loadingOlderMessages: false
+        };
+      });
     } catch {
       set({ loadingOlderMessages: false });
+    }
+  },
+  loadNewerDMMessages: async () => {
+    const dmChannelId = get().activeDMId;
+    if (!dmChannelId || get().loadingNewerMessages || !get().hasNewerDMMessages) {
+      return;
+    }
+
+    const lastMessageId = get().dmMessages[get().dmMessages.length - 1]?.id;
+    if (!lastMessageId) {
+      return;
+    }
+
+    set({ loadingNewerMessages: true });
+    try {
+      const { data } = await api.get(`/dms/${dmChannelId}/messages?after=${lastMessageId}`);
+      const appendedMessages = data.messages as DMMessage[];
+      const lastAppendedMessage = appendedMessages[appendedMessages.length - 1];
+
+      if (lastAppendedMessage) {
+        persistLastSeenByDM({ ...loadLastSeenByDM(), [dmChannelId]: lastAppendedMessage.id });
+      }
+
+      set((state) => ({
+        dmMessages: [...state.dmMessages, ...appendedMessages.filter((message) => !state.dmMessages.some((existing) => existing.id === message.id))],
+        hasNewerDMMessages: data.hasNewer === true,
+        loadingNewerMessages: false
+      }));
+    } catch {
+      set({ loadingNewerMessages: false });
     }
   },
   sendMessage: async (content, replyToId, attachment) => {
@@ -793,6 +1006,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!channelId || (!content.trim() && !attachment)) {
       return;
     }
+
+    const sendingIntoOlderSlice = get().hasNewerMessages;
+    const syncLatestWindowAfterSend = async (messageId: string): Promise<void> => {
+      let previousLastMessageId: string | null = null;
+
+      while (get().activeChannelId === channelId && get().hasNewerMessages && !get().messages.some((message) => message.id === messageId)) {
+        const lastLoadedMessageId = get().messages[get().messages.length - 1]?.id ?? null;
+        if (!lastLoadedMessageId || lastLoadedMessageId === previousLastMessageId) {
+          break;
+        }
+
+        previousLastMessageId = lastLoadedMessageId;
+        await get().loadNewerMessages();
+      }
+    };
 
     if (attachment) {
       const formData = new FormData();
@@ -804,6 +1032,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { data } = await api.post(`/chat/channels/${channelId}/messages`, formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
+      if (sendingIntoOlderSlice) {
+        await syncLatestWindowAfterSend(data.message.id);
+        return;
+      }
       set((state) => ({
         messages: state.messages.some((m) => m.id === data.message.id) ? state.messages : [...state.messages, data.message]
       }));
@@ -813,7 +1045,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Optimistic: show message immediately with pending flag
     const currentUser = useAuthStore.getState().user;
     const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    if (currentUser) {
+    if (currentUser && !sendingIntoOlderSlice) {
       const replyToMsg = replyToId ? (get().messages.find((m) => m.id === replyToId) ?? null) : null;
       const tempMessage: Message = {
         id: tempId,
@@ -833,6 +1065,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const { data } = await api.post(`/chat/channels/${channelId}/messages`, { content, replyToId });
+      if (sendingIntoOlderSlice) {
+        await syncLatestWindowAfterSend(data.message.id);
+        return;
+      }
       set((state) => ({
         messages: state.messages
           .filter((m) => m.id !== tempId)
@@ -849,9 +1085,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
+    const sendingIntoOlderSlice = get().hasNewerDMMessages;
+    const syncLatestWindowAfterSend = async (messageId: string): Promise<void> => {
+      let previousLastMessageId: string | null = null;
+
+      while (get().activeDMId === dmChannelId && get().hasNewerDMMessages && !get().dmMessages.some((message) => message.id === messageId)) {
+        const lastLoadedMessageId = get().dmMessages[get().dmMessages.length - 1]?.id ?? null;
+        if (!lastLoadedMessageId || lastLoadedMessageId === previousLastMessageId) {
+          break;
+        }
+
+        previousLastMessageId = lastLoadedMessageId;
+        await get().loadNewerDMMessages();
+      }
+    };
+
     // Optimistic for text-only DM messages
     let tempId: string | null = null;
-    if (!attachment) {
+    if (!attachment && !sendingIntoOlderSlice) {
       const currentUser = useAuthStore.getState().user;
       if (currentUser) {
         tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -886,6 +1137,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { data } = await api.post(`/dms/${dmChannelId}/messages`, formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
+      if (sendingIntoOlderSlice) {
+        await syncLatestWindowAfterSend(data.message.id);
+        return;
+      }
       if (tempId) {
         set((state) => ({
           dmMessages: state.dmMessages
@@ -1038,16 +1293,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
       set((state) => {
         const nextUnread = { ...state.unreadByChannel };
+        const nextMentions = { ...state.mentionUnreadByChannel };
         for (const [channelId, count] of Object.entries(data.channels as Record<string, number>)) {
           nextUnread[channelId] = Math.max(nextUnread[channelId] ?? 0, count);
+        }
+        // Handle mention counts from the new API response
+        if (data.channelMentions) {
+          for (const [channelId, count] of Object.entries(data.channelMentions as Record<string, number>)) {
+            nextMentions[channelId] = count;
+          }
         }
         const nextDMs = { ...state.unreadDMs };
         for (const [dmId, count] of Object.entries(data.dms as Record<string, number>)) {
           nextDMs[dmId] = Math.max(nextDMs[dmId] ?? 0, count);
         }
-        persistUnreads(nextUnread, state.mentionUnreadByChannel);
+        // Handle DM mention counts
+        if (data.dmMentions) {
+          // DM mentions are tracked per DM channel
+          for (const [dmId, count] of Object.entries(data.dmMentions as Record<string, number>)) {
+            nextMentions[dmId] = count;
+          }
+        }
+        persistUnreads(nextUnread, nextMentions);
         persistUnreadDMs(nextDMs);
-        return { unreadByChannel: nextUnread, unreadDMs: nextDMs };
+        return { unreadByChannel: nextUnread, unreadDMs: nextDMs, mentionUnreadByChannel: nextMentions };
       });
     } catch {
       // Non-fatal: badge counts may be stale but app still works
@@ -1175,12 +1444,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const active = get().activeChannelId;
       const isViewingChannel = get().mode === "SERVER" && message.channelId === active;
+      const isViewingOlderSlice = isViewingChannel && get().hasNewerMessages;
       const shouldMarkUnread = !isViewingChannel || !isAppFocused();
       const isSelfAuthored = Boolean(currentUser?.id && message.authorId === currentUser.id);
 
       if (isViewingChannel) {
         set((state) => {
           if (state.messages.some((m) => m.id === message.id)) {
+            return { messages: state.messages };
+          }
+          if (state.hasNewerMessages) {
             return { messages: state.messages };
           }
           // Replace a matching pending message so we don't briefly show both
@@ -1198,14 +1471,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return { messages: [...state.messages, message] };
         });
         // Keep last-seen in sync so a refresh doesn't create a false "New Messages" divider
-        persistLastSeenByChannel({ ...loadLastSeenByChannel(), [message.channelId]: message.id });
+        if (!isViewingOlderSlice) {
+          persistLastSeenByChannel({ ...loadLastSeenByChannel(), [message.channelId]: message.id });
+        }
       }
 
       if (shouldMarkUnread && !isSelfAuthored) {
-        const mentionByUsername = currentUser ? message.content.includes(`@${currentUser.username}`) : false;
-        const mentionByNickname = currentUser?.nickname ? message.content.includes(`@${currentUser.nickname}`) : false;
-        const mentionByReply = Boolean(currentUser && message.replyTo?.author?.id === currentUser.id && message.authorId !== currentUser.id);
-        const isMention = mentionByUsername || mentionByNickname || mentionByReply;
+        // Count all mentions in the message content
+        let mentionCount = 0;
+        if (currentUser) {
+          const escapedUsername = currentUser.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const usernameRegex = new RegExp(`@${escapedUsername}(?![a-z0-9_])`, 'gi');
+          const usernameMentions = (message.content.match(usernameRegex) || []).length;
+          mentionCount += usernameMentions;
+
+          if (currentUser.nickname) {
+            const escapedNickname = currentUser.nickname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const nicknameRegex = new RegExp(`@${escapedNickname}(?![a-z0-9_])`, 'gi');
+            const nicknameMentions = (message.content.match(nicknameRegex) || []).length;
+            mentionCount += nicknameMentions;
+          }
+        }
+
+        // Count @everyone and @here mentions
+        const everyoneMentions = (message.content.match(/@everyone/g) || []).length;
+        const hereMentions = (message.content.match(/@here/g) || []).length;
+        mentionCount += everyoneMentions + hereMentions;
+
+        // Count reply mentions (replying to the current user)
+        if (currentUser && message.replyTo?.author?.id === currentUser.id && message.authorId !== currentUser.id) {
+          mentionCount += 1;
+        }
+
+        const isMention = mentionCount > 0;
         playUnreadNotification();
         set((state) => ({
           unreadByChannel: (() => {
@@ -1215,14 +1513,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
             };
             const nextMentionUnread = {
               ...state.mentionUnreadByChannel,
-              [message.channelId]: isMention ? (state.mentionUnreadByChannel[message.channelId] ?? 0) + 1 : (state.mentionUnreadByChannel[message.channelId] ?? 0)
+              [message.channelId]: (state.mentionUnreadByChannel[message.channelId] ?? 0) + mentionCount
             };
             persistUnreads(nextUnread, nextMentionUnread);
             return nextUnread;
           })(),
           mentionUnreadByChannel: {
             ...state.mentionUnreadByChannel,
-            [message.channelId]: isMention ? (state.mentionUnreadByChannel[message.channelId] ?? 0) + 1 : (state.mentionUnreadByChannel[message.channelId] ?? 0)
+            [message.channelId]: (state.mentionUnreadByChannel[message.channelId] ?? 0) + mentionCount
           },
           lastUnreadMessageIdByChannel: (() => {
             const next = {
@@ -1435,10 +1733,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         void get().loadDMs();
       }
 
+      const isViewingOlderSlice = isViewingDM && get().hasNewerDMMessages;
+
       if (currentUser?.id && message.authorId === currentUser.id) {
         if (isViewingDM) {
           set((state) => {
             if (state.dmMessages.some((m) => m.id === message.id)) {
+              return { dmMessages: state.dmMessages };
+            }
+            if (state.hasNewerDMMessages) {
               return { dmMessages: state.dmMessages };
             }
             // Replace matching pending message to avoid the brief duplicate flash.
@@ -1452,27 +1755,55 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
             return { dmMessages: [...state.dmMessages, message] };
           });
-          persistLastSeenByDM({ ...loadLastSeenByDM(), [message.dmChannelId]: message.id });
+          if (!isViewingOlderSlice) {
+            persistLastSeenByDM({ ...loadLastSeenByDM(), [message.dmChannelId]: message.id });
+          }
         }
         return;
       }
 
       if (isViewingDM) {
-        set((state) => ({
-          dmMessages: state.dmMessages.some((m) => m.id === message.id) ? state.dmMessages : [...state.dmMessages, message]
-        }));
-        persistLastSeenByDM({ ...loadLastSeenByDM(), [message.dmChannelId]: message.id });
+        set((state) => {
+          if (state.hasNewerDMMessages || state.dmMessages.some((m) => m.id === message.id)) {
+            return { dmMessages: state.dmMessages };
+          }
+          return { dmMessages: [...state.dmMessages, message] };
+        });
+        if (!isViewingOlderSlice) {
+          persistLastSeenByDM({ ...loadLastSeenByDM(), [message.dmChannelId]: message.id });
+        }
       }
 
       if (shouldMarkUnread) {
+        // Count all mentions in the DM message
+        let mentionCount = 0;
+        if (currentUser) {
+          const escapedUsername = currentUser.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const usernameRegex = new RegExp(`@${escapedUsername}(?![a-z0-9_])`, 'gi');
+          const usernameMentions = (message.content.match(usernameRegex) || []).length;
+          mentionCount += usernameMentions;
+
+          if (currentUser.nickname) {
+            const escapedNickname = currentUser.nickname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const nicknameRegex = new RegExp(`@${escapedNickname}(?![a-z0-9_])`, 'gi');
+            const nicknameMentions = (message.content.match(nicknameRegex) || []).length;
+            mentionCount += nicknameMentions;
+          }
+        }
+
         playUnreadNotification();
         set((state) => {
-          const next = {
+          const nextUnread = {
             ...state.unreadDMs,
             [message.dmChannelId]: (state.unreadDMs[message.dmChannelId] ?? 0) + 1
           };
-          persistUnreadDMs(next);
-          return { unreadDMs: next };
+          const nextMentions = {
+            ...state.mentionUnreadByChannel,
+            [message.dmChannelId]: (state.mentionUnreadByChannel[message.dmChannelId] ?? 0) + mentionCount
+          };
+          persistUnreadDMs(nextUnread);
+          persistUnreads(state.unreadByChannel, nextMentions);
+          return { unreadDMs: nextUnread, mentionUnreadByChannel: nextMentions };
         });
       }
     });
@@ -1518,7 +1849,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
     });
 
-    socket.on("server:member:updated", ({ serverId, member }: { serverId: string; member: Server["members"][number] }) => {
+    socket.on("server:member:updated", ({ serverId, member }: { serverId: string; member: Server["members"][number] & { permissions?: string } }) => {
       set((state) => ({
         servers: state.servers.map((server) => {
           if (server.id !== serverId) return server;

@@ -172,7 +172,7 @@ const OpenGraphEmbed = ({ url }: Props): JSX.Element | null => {
             )}
             <span className="truncate">{siteLabel}</span>
           </div>
-          <p className="mt-2 text-base font-semibold leading-5 text-[#00a8fc]">{title}</p>
+          <p className="mt-2 text-base font-semibold leading-5" style={{ color: "var(--wc-link)" }}>{title}</p>
           {embed.description ? (
             <p className="mt-1 text-sm leading-4 text-[#dbdee1]" style={{ ...clampStyle, WebkitLineClamp: 3 }}>
               {embed.description}

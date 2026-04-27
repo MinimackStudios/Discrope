@@ -4,13 +4,672 @@
 
 :root {
   color-scheme: dark;
+  --wc-bg-top: #1a2030;
+  --wc-bg-bottom: #121720;
+  --wc-line: rgba(255, 255, 255, 0.045);
+  --wc-line-strong: rgba(171, 194, 255, 0.16);
+  --wc-glow-a: rgba(124, 153, 255, 0.14);
+  --wc-glow-b: rgba(92, 203, 255, 0.08);
+  --wc-shell-top: #1a202d;
+  --wc-shell-bottom: #121720;
+  --wc-rail-top: rgba(17, 20, 29, 0.96);
+  --wc-rail-bottom: rgba(12, 15, 22, 0.98);
+  --wc-button-top: rgba(47, 53, 69, 0.92);
+  --wc-button-bottom: rgba(34, 39, 52, 0.92);
+  --wc-button-hover-top: rgba(58, 66, 85, 0.96);
+  --wc-button-hover-bottom: rgba(41, 47, 63, 0.96);
+  --wc-active-top: rgba(112, 141, 255, 0.9);
+  --wc-active-bottom: rgba(76, 99, 187, 0.94);
+  --wc-active-shadow: rgba(41, 63, 140, 0.34);
+  --wc-sidebar-top: rgba(22, 27, 38, 0.86);
+  --wc-sidebar-bottom: rgba(17, 22, 31, 0.94);
+  --wc-modal-glow: rgba(124, 153, 255, 0.08);
+  --wc-chat-glow: rgba(124, 153, 255, 0.06);
+  --wc-chat-top: rgba(34, 39, 53, 0.9);
+  --wc-chat-bottom: rgba(25, 30, 40, 0.98);
+  --wc-compose-top: rgba(68, 75, 96, 0.86);
+  --wc-compose-bottom: rgba(56, 62, 82, 0.94);
+  --wc-empty-glow: rgba(124, 153, 255, 0.1);
+  --wc-surface-tint: rgba(160, 188, 255, 0.06);
+  --wc-surface-tint-strong: rgba(160, 188, 255, 0.1);
+  --wc-focus-ring: rgba(124, 153, 255, 0.18);
+  --wc-card-surface: rgba(0, 0, 0, 0.2);
+  --wc-card-surface-strong: rgba(0, 0, 0, 0.28);
+  --wc-input-bg: rgba(0, 0, 0, 0.22);
+  --wc-input-border: rgba(255, 255, 255, 0.08);
+  --wc-profile-cutout: #1e2430;
+  --wc-member-panel-cutout: #161d29;
+  --wc-member-panel-bg: linear-gradient(180deg, var(--wc-member-panel-cutout), rgba(15, 19, 28, 0.96));
+  --wc-userbar-cutout: #141b26;
+  --wc-userbar-bg: linear-gradient(180deg, rgba(17, 22, 31, 0.92), rgba(13, 17, 25, 0.98));
+  --wc-channel-active-bg: linear-gradient(180deg, rgba(124, 153, 255, 0.22), rgba(62, 74, 106, 0.24));
+  --wc-dm-active-bg: linear-gradient(180deg, rgba(124, 153, 255, 0.2), rgba(59, 69, 96, 0.22));
+  --wc-modal-bg: radial-gradient(circle at top left, var(--wc-modal-glow), transparent 22%), linear-gradient(180deg, rgba(30, 36, 49, 0.96), rgba(18, 22, 31, 0.98));
+  --wc-emoji-bg: #272d3b;
+  --wc-emoji-panel: #1e1f22;
+  --wc-emoji-border: #232428;
+  --wc-emoji-hover: #3b3d44;
+  --wc-login-bg: radial-gradient(circle at top center, var(--wc-glow-a), transparent 45%), radial-gradient(circle at 80% 0%, var(--wc-glow-b), transparent 35%), linear-gradient(180deg, var(--wc-bg-top), var(--wc-bg-bottom));
+  --wc-emoji-accent: #7c99ff;
+  --wc-accent: #5865f2;
+  --wc-accent-hover: #4752c4;
+  --wc-accent-light: #7c99ff;
+  --wc-accent-bg: rgba(88, 101, 242, 0.22);
+  --wc-accent-text: #c9cdfb;
+  --wc-link: #00a8fc;
+  --wc-mention-bg: #3a4273;
+  --wc-mention-text: #d7e1ff;
+  --wc-mention-me-bg: rgba(88, 101, 242, 0.12);
+  --wc-reply-highlight-bg: rgba(88, 101, 242, 0.1);
+  --wc-reply-target-bg: rgba(88, 101, 242, 0.15);
+  --wc-highlight-edge: var(--wc-accent-light);
+  --wc-settings-sidebar-bg: linear-gradient(180deg, rgba(16, 20, 28, 0.94), rgba(11, 14, 21, 0.98));
+  --wc-status-cutout: var(--wc-accent);
+  --wc-code-inline-bg: color-mix(in srgb, var(--wc-card-surface-strong) 76%, var(--wc-accent) 24%);
+  --wc-code-inline-border: color-mix(in srgb, var(--wc-accent) 18%, rgba(255, 255, 255, 0.08));
+  --wc-code-inline-text: color-mix(in srgb, var(--wc-accent-text) 82%, white 18%);
+  --wc-code-block-bg: color-mix(in srgb, var(--wc-card-surface-strong) 92%, var(--wc-bg-bottom) 8%);
+  --wc-code-block-border: color-mix(in srgb, var(--wc-accent) 14%, rgba(255, 255, 255, 0.08));
+  --wc-search-shell-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  --wc-reaction-active-border: #5865f2;
+  --wc-reaction-active-bg: #3b4270;
+  --wc-reaction-active-text: #dfe5ff;
+  --wc-reaction-idle-border: color-mix(in srgb, var(--wc-button-hover-bottom) 82%, rgba(255, 255, 255, 0.16));
+  --wc-reaction-idle-bg: color-mix(in srgb, var(--wc-button-bottom) 80%, black 20%);
+  --wc-reaction-idle-hover-bg: color-mix(in srgb, var(--wc-button-hover-bottom) 88%, var(--wc-accent) 12%);
+  --wc-reaction-idle-text: color-mix(in srgb, #cfd4db 88%, var(--wc-accent-text) 12%);
+  --wc-audio-icon-bg: #dfe2ff;
+  --wc-audio-icon-fg: #5865f2;
+  --wc-audio-progress-bg: #5865f2;
+  --wc-highlight-ring: #5865f2;
+  --wc-highlight-bg: rgba(45, 50, 68, 0.15);
+}
+
+:root[data-windcord-theme="ember"] {
+  --wc-bg-top: #231716;
+  --wc-bg-bottom: #130f11;
+  --wc-glow-a: rgba(255, 155, 99, 0.14);
+  --wc-glow-b: rgba(255, 210, 122, 0.08);
+  --wc-shell-top: #251918;
+  --wc-shell-bottom: #140f11;
+  --wc-rail-top: rgba(26, 17, 18, 0.97);
+  --wc-rail-bottom: rgba(18, 12, 13, 0.99);
+  --wc-button-top: rgba(74, 48, 42, 0.92);
+  --wc-button-bottom: rgba(55, 35, 31, 0.94);
+  --wc-button-hover-top: rgba(88, 56, 48, 0.96);
+  --wc-button-hover-bottom: rgba(67, 43, 38, 0.96);
+  --wc-active-top: rgba(255, 155, 99, 0.92);
+  --wc-active-bottom: rgba(192, 92, 56, 0.94);
+  --wc-active-shadow: rgba(132, 57, 35, 0.34);
+  --wc-sidebar-top: rgba(34, 23, 24, 0.9);
+  --wc-sidebar-bottom: rgba(22, 16, 17, 0.96);
+  --wc-modal-glow: rgba(255, 155, 99, 0.08);
+  --wc-chat-glow: rgba(255, 168, 92, 0.05);
+  --wc-chat-top: rgba(49, 34, 31, 0.92);
+  --wc-chat-bottom: rgba(30, 23, 24, 0.98);
+  --wc-compose-top: rgba(90, 65, 58, 0.88);
+  --wc-compose-bottom: rgba(69, 50, 46, 0.94);
+  --wc-empty-glow: rgba(255, 155, 99, 0.1);
+  --wc-surface-tint: rgba(255, 179, 136, 0.08);
+  --wc-surface-tint-strong: rgba(255, 179, 136, 0.13);
+  --wc-focus-ring: rgba(255, 155, 99, 0.2);
+  --wc-card-surface: rgba(0, 0, 0, 0.22);
+  --wc-card-surface-strong: rgba(0, 0, 0, 0.3);
+  --wc-input-bg: rgba(16, 8, 7, 0.26);
+  --wc-input-border: rgba(255, 220, 195, 0.08);
+  --wc-profile-cutout: #2b201f;
+  --wc-member-panel-cutout: #211818;
+  --wc-member-panel-bg: linear-gradient(180deg, var(--wc-member-panel-cutout), rgba(18, 12, 13, 0.96));
+  --wc-userbar-cutout: #1b1414;
+  --wc-userbar-bg: linear-gradient(180deg, rgba(34, 23, 24, 0.92), rgba(22, 16, 17, 0.98));
+  --wc-channel-active-bg: linear-gradient(180deg, rgba(255, 155, 99, 0.22), rgba(90, 58, 42, 0.24));
+  --wc-dm-active-bg: linear-gradient(180deg, rgba(255, 155, 99, 0.2), rgba(80, 50, 35, 0.22));
+  --wc-modal-bg: radial-gradient(circle at top left, var(--wc-modal-glow), transparent 22%), linear-gradient(180deg, rgba(49, 34, 31, 0.96), rgba(30, 23, 24, 0.98));
+  --wc-userbar-bg: linear-gradient(180deg, rgba(34, 23, 24, 0.92), rgba(22, 16, 17, 0.98));
+  --wc-emoji-bg: #332726;
+  --wc-emoji-panel: #1c1414;
+  --wc-emoji-border: #2d2221;
+  --wc-emoji-hover: #47312d;
+  --wc-emoji-accent: #ff9b63;
+  --wc-accent: #ff9b63;
+  --wc-accent-hover: #e8854a;
+  --wc-accent-light: #ffb380;
+  --wc-accent-bg: rgba(255, 155, 99, 0.22);
+  --wc-accent-text: #ffe0cc;
+  --wc-link: #ff9b63;
+  --wc-mention-bg: #5e3c27;
+  --wc-mention-text: #ffe0cc;
+  --wc-mention-me-bg: #3a2518;
+  --wc-reply-highlight-bg: rgba(255, 155, 99, 0.1);
+  --wc-reply-target-bg: rgba(255, 155, 99, 0.15);
+  --wc-highlight-edge: var(--wc-accent-light);
+  --wc-settings-sidebar-bg: linear-gradient(180deg, rgba(34, 23, 24, 0.94), rgba(22, 16, 17, 0.98));
+  --wc-status-cutout: var(--wc-accent);
+  --wc-reaction-active-border: #ff9b63;
+  --wc-reaction-active-bg: #5a3a2a;
+  --wc-reaction-active-text: #ffe0cc;
+  --wc-audio-icon-bg: #ffe0cc;
+  --wc-audio-icon-fg: #ff9b63;
+  --wc-audio-progress-bg: #ff9b63;
+  --wc-highlight-ring: #ff9b63;
+  --wc-highlight-bg: rgba(65, 60, 53, 0.15);
+}
+
+:root[data-windcord-theme="frost"] {
+  --wc-bg-top: #162430;
+  --wc-bg-bottom: #0f1720;
+  --wc-glow-a: rgba(120, 200, 255, 0.12);
+  --wc-glow-b: rgba(197, 239, 255, 0.08);
+  --wc-shell-top: #182733;
+  --wc-shell-bottom: #0f1720;
+  --wc-rail-top: rgba(14, 24, 31, 0.97);
+  --wc-rail-bottom: rgba(10, 18, 24, 0.99);
+  --wc-button-top: rgba(49, 71, 84, 0.92);
+  --wc-button-bottom: rgba(34, 53, 65, 0.94);
+  --wc-button-hover-top: rgba(58, 85, 101, 0.96);
+  --wc-button-hover-bottom: rgba(41, 66, 79, 0.96);
+  --wc-active-top: rgba(120, 200, 255, 0.92);
+  --wc-active-bottom: rgba(72, 137, 184, 0.95);
+  --wc-active-shadow: rgba(45, 100, 139, 0.32);
+  --wc-sidebar-top: rgba(18, 30, 39, 0.9);
+  --wc-sidebar-bottom: rgba(14, 22, 29, 0.96);
+  --wc-modal-glow: rgba(120, 200, 255, 0.08);
+  --wc-chat-glow: rgba(120, 200, 255, 0.05);
+  --wc-chat-top: rgba(32, 49, 61, 0.92);
+  --wc-chat-bottom: rgba(20, 31, 40, 0.98);
+  --wc-compose-top: rgba(68, 93, 108, 0.88);
+  --wc-compose-bottom: rgba(54, 76, 89, 0.95);
+  --wc-empty-glow: rgba(120, 200, 255, 0.1);
+  --wc-surface-tint: rgba(162, 223, 255, 0.08);
+  --wc-surface-tint-strong: rgba(162, 223, 255, 0.14);
+  --wc-focus-ring: rgba(120, 200, 255, 0.18);
+  --wc-card-surface: rgba(0, 0, 0, 0.2);
+  --wc-card-surface-strong: rgba(0, 0, 0, 0.26);
+  --wc-input-bg: rgba(4, 12, 17, 0.24);
+  --wc-input-border: rgba(203, 241, 255, 0.08);
+  --wc-profile-cutout: #20323d;
+  --wc-member-panel-cutout: #172833;
+  --wc-member-panel-bg: linear-gradient(180deg, var(--wc-member-panel-cutout), rgba(14, 22, 29, 0.96));
+  --wc-userbar-cutout: #13212b;
+  --wc-userbar-bg: linear-gradient(180deg, rgba(18, 30, 39, 0.92), rgba(14, 22, 29, 0.98));
+  --wc-channel-active-bg: linear-gradient(180deg, rgba(120, 200, 255, 0.22), rgba(42, 74, 90, 0.24));
+  --wc-dm-active-bg: linear-gradient(180deg, rgba(120, 200, 255, 0.2), rgba(35, 60, 75, 0.22));
+  --wc-modal-bg: radial-gradient(circle at top left, var(--wc-modal-glow), transparent 22%), linear-gradient(180deg, rgba(32, 49, 61, 0.96), rgba(20, 31, 40, 0.98));
+  --wc-userbar-bg: linear-gradient(180deg, rgba(18, 30, 39, 0.92), rgba(14, 22, 29, 0.98));
+  --wc-emoji-bg: #293640;
+  --wc-emoji-panel: #17222b;
+  --wc-emoji-border: #22303a;
+  --wc-emoji-hover: #344650;
+  --wc-emoji-accent: #78c8ff;
+  --wc-accent: #78c8ff;
+  --wc-accent-hover: #5ab8f0;
+  --wc-accent-light: #a0d8ff;
+  --wc-accent-bg: rgba(120, 200, 255, 0.22);
+  --wc-accent-text: #d0f0ff;
+  --wc-link: #78c8ff;
+  --wc-mention-bg: #2a4a5a;
+  --wc-mention-text: #d0f0ff;
+  --wc-mention-me-bg: #1a3040;
+  --wc-reply-highlight-bg: rgba(120, 200, 255, 0.1);
+  --wc-reply-target-bg: rgba(120, 200, 255, 0.15);
+  --wc-highlight-edge: var(--wc-accent-light);
+  --wc-settings-sidebar-bg: linear-gradient(180deg, rgba(18, 30, 39, 0.94), rgba(14, 22, 29, 0.98));
+  --wc-status-cutout: var(--wc-accent);
+  --wc-reaction-active-border: #78c8ff;
+  --wc-reaction-active-bg: #2a4a5a;
+  --wc-reaction-active-text: #d0f0ff;
+  --wc-audio-icon-bg: #d0f0ff;
+  --wc-audio-icon-fg: #78c8ff;
+  --wc-audio-progress-bg: #78c8ff;
+  --wc-highlight-ring: #78c8ff;
+  --wc-highlight-bg: rgba(45, 60, 80, 0.15);
+}
+
+/* ===== NEW THEMES BELOW ===== */
+
+/* Classic Discord - Flat solid colors, no gradients, soft muted accents matching original Discord UI */
+:root[data-windcord-theme="classic"] {
+  --wc-bg-top: #2e3035;
+  --wc-bg-bottom: #2e3035;
+  --wc-line: rgba(255, 255, 255, 0.06);
+  --wc-line-strong: rgba(255, 255, 255, 0.1);
+  --wc-glow-a: transparent;
+  --wc-glow-b: transparent;
+  --wc-shell-top: #282a2e;
+  --wc-shell-bottom: #282a2e;
+  --wc-rail-top: #202225;
+  --wc-rail-bottom: #202225;
+  --wc-button-top: #36393f;
+  --wc-button-bottom: #36393f;
+  --wc-button-hover-top: #40444b;
+  --wc-button-hover-bottom: #40444b;
+  --wc-active-top: #5865f2;
+  --wc-active-bottom: #5865f2;
+  --wc-active-shadow: rgba(0, 0, 0, 0.2);
+  --wc-sidebar-top: #2f3136;
+  --wc-sidebar-bottom: #2f3136;
+  --wc-modal-glow: transparent;
+  --wc-chat-glow: transparent;
+  --wc-chat-top: #36393f;
+  --wc-chat-bottom: #36393f;
+  --wc-compose-top: #40444b;
+  --wc-compose-bottom: #40444b;
+  --wc-empty-glow: transparent;
+  --wc-surface-tint: rgba(255, 255, 255, 0.04);
+  --wc-surface-tint-strong: rgba(255, 255, 255, 0.06);
+  --wc-focus-ring: rgba(88, 101, 242, 0.4);
+  --wc-card-surface: rgba(0, 0, 0, 0.15);
+  --wc-card-surface-strong: rgba(0, 0, 0, 0.2);
+  --wc-input-bg: rgba(0, 0, 0, 0.15);
+  --wc-input-border: rgba(255, 255, 255, 0.06);
+  --wc-profile-cutout: #2f3136;
+  --wc-member-panel-cutout: #292b2f;
+  --wc-member-panel-bg: #292b2f;
+  --wc-userbar-cutout: #292b2f;
+  --wc-userbar-bg: #292b2f;
+  --wc-channel-active-bg: #40444b;
+  --wc-dm-active-bg: #40444b;
+  --wc-modal-bg: #36393f;
+  --wc-highlight-edge: #d5a033;
+  --wc-settings-sidebar-bg: #2f3136;
+  --wc-login-bg: linear-gradient(to bottom, #23262a, #111214);
+  --wc-status-cutout: #40444b;
+  --wc-emoji-bg: #2f3136;
+  --wc-emoji-panel: #292b2f;
+  --wc-emoji-border: #202225;
+  --wc-emoji-hover: #40444b;
+  --wc-emoji-accent: #5865f2;
+  --wc-accent: #5865f2;
+  --wc-accent-hover: #4752c4;
+  --wc-accent-light: #7289da;
+  --wc-accent-bg: rgba(88, 101, 242, 0.15);
+  --wc-accent-text: #dcddde;
+  --wc-link: #00aff4;
+  --wc-code-inline-bg: #2f3136;
+  --wc-code-inline-border: transparent;
+  --wc-code-inline-text: inherit;
+  --wc-code-block-bg: #2f3136;
+  --wc-code-block-border: #202225;
+  --wc-search-shell-shadow: none;
+  --wc-mention-bg: #3a4273;
+  --wc-mention-text: #dcddde;
+  --wc-mention-me-bg: #413c35;
+  --wc-reply-highlight-bg: rgba(88, 101, 242, 0.08);
+  --wc-reply-target-bg: rgba(88, 101, 242, 0.12);
+  --wc-highlight-edge: #d5a033;
+  --wc-settings-sidebar-bg: #2f3136;
+  --wc-reaction-active-border: #5865f2;
+  --wc-reaction-active-bg: rgba(88, 101, 242, 0.15);
+  --wc-reaction-active-text: #dcddde;
+  --wc-reaction-idle-border: #4a4d55;
+  --wc-reaction-idle-bg: #2b2d31;
+  --wc-reaction-idle-hover-bg: #35373c;
+  --wc-reaction-idle-text: #dbdee1;
+  --wc-audio-icon-bg: rgba(88, 101, 242, 0.15);
+  --wc-audio-icon-fg: #5865f2;
+  --wc-audio-progress-bg: #5865f2;
+  --wc-highlight-ring: #5865f2;
+  --wc-highlight-bg: rgba(88, 101, 242, 0.08);
+}
+
+/* Midnight Deep - Deep purple/blue dark theme (NEW) */
+:root[data-windcord-theme="midnight-deep"] {
+  --wc-bg-top: #0d0d1a;
+  --wc-bg-bottom: #050510;
+  --wc-glow-a: rgba(100, 100, 255, 0.15);
+  --wc-glow-b: rgba(150, 50, 255, 0.1);
+  --wc-shell-top: #12122a;
+  --wc-shell-bottom: #0a0a1a;
+  --wc-rail-top: rgba(8, 8, 20, 0.97);
+  --wc-rail-bottom: rgba(5, 5, 15, 0.99);
+  --wc-button-top: rgba(30, 30, 60, 0.92);
+  --wc-button-bottom: rgba(20, 20, 45, 0.94);
+  --wc-button-hover-top: rgba(40, 40, 80, 0.96);
+  --wc-button-hover-bottom: rgba(30, 30, 60, 0.96);
+  --wc-active-top: rgba(100, 100, 255, 0.92);
+  --wc-active-bottom: rgba(70, 50, 180, 0.94);
+  --wc-active-shadow: rgba(50, 30, 120, 0.34);
+  --wc-sidebar-top: rgba(15, 15, 35, 0.9);
+  --wc-sidebar-bottom: rgba(10, 10, 25, 0.96);
+  --wc-modal-glow: rgba(100, 100, 255, 0.08);
+  --wc-chat-glow: rgba(100, 100, 255, 0.05);
+  --wc-chat-top: rgba(20, 20, 45, 0.92);
+  --wc-chat-bottom: rgba(12, 12, 30, 0.98);
+  --wc-compose-top: rgba(45, 45, 85, 0.88);
+  --wc-compose-bottom: rgba(35, 35, 65, 0.94);
+  --wc-empty-glow: rgba(100, 100, 255, 0.1);
+  --wc-surface-tint: rgba(120, 120, 255, 0.08);
+  --wc-surface-tint-strong: rgba(120, 120, 255, 0.14);
+  --wc-focus-ring: rgba(100, 100, 255, 0.2);
+  --wc-card-surface: rgba(0, 0, 0, 0.25);
+  --wc-card-surface-strong: rgba(0, 0, 0, 0.3);
+  --wc-input-bg: rgba(5, 5, 15, 0.3);
+  --wc-input-border: rgba(150, 150, 255, 0.08);
+  --wc-profile-cutout: #151530;
+  --wc-member-panel-cutout: #0f0f25;
+  --wc-member-panel-bg: linear-gradient(180deg, var(--wc-member-panel-cutout), rgba(10, 10, 25, 0.96));
+  --wc-userbar-cutout: #0c0c20;
+  --wc-userbar-bg: linear-gradient(180deg, rgba(15, 15, 35, 0.92), rgba(10, 10, 25, 0.98));
+  --wc-channel-active-bg: linear-gradient(180deg, rgba(100, 100, 255, 0.22), rgba(42, 42, 90, 0.24));
+  --wc-dm-active-bg: linear-gradient(180deg, rgba(100, 100, 255, 0.2), rgba(35, 35, 75, 0.22));
+  --wc-modal-bg: radial-gradient(circle at top left, var(--wc-modal-glow), transparent 22%), linear-gradient(180deg, rgba(20, 20, 45, 0.96), rgba(12, 12, 30, 0.98));
+  --wc-emoji-bg: #1a1a35;
+  --wc-emoji-panel: #12122a;
+  --wc-emoji-border: #1a1a35;
+  --wc-emoji-hover: #252550;
+  --wc-emoji-accent: #8888ff;
+  --wc-accent: #6464ff;
+  --wc-accent-hover: #5050cc;
+  --wc-accent-light: #9999ff;
+  --wc-accent-bg: rgba(100, 100, 255, 0.22);
+  --wc-accent-text: #d0d0ff;
+  --wc-link: #8888ff;
+  --wc-mention-bg: #2a2a5a;
+  --wc-mention-text: #d0d0ff;
+  --wc-mention-me-bg: #181831;
+  --wc-reply-highlight-bg: rgba(100, 100, 255, 0.1);
+  --wc-reply-target-bg: rgba(100, 100, 255, 0.15);
+  --wc-highlight-edge: var(--wc-accent-light);
+  --wc-settings-sidebar-bg: linear-gradient(180deg, rgba(15, 15, 35, 0.94), rgba(10, 10, 25, 0.98));
+  --wc-status-cutout: var(--wc-accent);
+  --wc-reaction-active-border: #6464ff;
+  --wc-reaction-active-bg: #2a2a5a;
+  --wc-reaction-active-text: #d0d0ff;
+  --wc-audio-icon-bg: #d0d0ff;
+  --wc-audio-icon-fg: #6464ff;
+  --wc-audio-progress-bg: #6464ff;
+  --wc-highlight-ring: #6464ff;
+  --wc-highlight-bg: rgba(40, 40, 80, 0.15);
+}
+
+/* Rose - Pink/rose themed */
+:root[data-windcord-theme="rose"] {
+  --wc-bg-top: #3a202b;
+  --wc-bg-bottom: #22111b;
+  --wc-glow-a: rgba(255, 138, 178, 0.16);
+  --wc-glow-b: rgba(255, 199, 206, 0.09);
+  --wc-shell-top: #432733;
+  --wc-shell-bottom: #24121d;
+  --wc-rail-top: rgba(34, 17, 27, 0.97);
+  --wc-rail-bottom: rgba(20, 10, 17, 0.99);
+  --wc-button-top: rgba(95, 55, 73, 0.92);
+  --wc-button-bottom: rgba(70, 38, 53, 0.95);
+  --wc-button-hover-top: rgba(113, 67, 87, 0.96);
+  --wc-button-hover-bottom: rgba(84, 47, 63, 0.96);
+  --wc-active-top: rgba(255, 138, 178, 0.94);
+  --wc-active-bottom: rgba(205, 89, 127, 0.95);
+  --wc-active-shadow: rgba(134, 56, 85, 0.34);
+  --wc-sidebar-top: rgba(45, 25, 36, 0.9);
+  --wc-sidebar-bottom: rgba(29, 15, 23, 0.96);
+  --wc-modal-glow: rgba(255, 152, 190, 0.08);
+  --wc-chat-glow: rgba(255, 168, 194, 0.06);
+  --wc-chat-top: rgba(60, 35, 47, 0.92);
+  --wc-chat-bottom: rgba(34, 18, 28, 0.98);
+  --wc-compose-top: rgba(101, 63, 81, 0.9);
+  --wc-compose-bottom: rgba(74, 44, 58, 0.95);
+  --wc-empty-glow: rgba(255, 138, 178, 0.1);
+  --wc-surface-tint: rgba(255, 180, 198, 0.09);
+  --wc-surface-tint-strong: rgba(255, 180, 198, 0.15);
+  --wc-focus-ring: rgba(255, 152, 190, 0.22);
+  --wc-card-surface: rgba(0, 0, 0, 0.22);
+  --wc-card-surface-strong: rgba(0, 0, 0, 0.28);
+  --wc-input-bg: rgba(20, 8, 14, 0.28);
+  --wc-input-border: rgba(255, 206, 219, 0.1);
+  --wc-profile-cutout: #311823;
+  --wc-member-panel-cutout: #27131d;
+  --wc-member-panel-bg: linear-gradient(180deg, var(--wc-member-panel-cutout), rgba(29, 15, 23, 0.96));
+  --wc-userbar-cutout: #22111a;
+  --wc-userbar-bg: linear-gradient(180deg, rgba(60, 35, 47, 0.92), rgba(34, 18, 28, 0.98));
+  --wc-channel-active-bg: linear-gradient(180deg, rgba(255, 138, 178, 0.24), rgba(103, 45, 67, 0.26));
+  --wc-dm-active-bg: linear-gradient(180deg, rgba(255, 138, 178, 0.21), rgba(90, 39, 59, 0.24));
+  --wc-modal-bg: radial-gradient(circle at top left, var(--wc-modal-glow), transparent 24%), linear-gradient(180deg, rgba(60, 35, 47, 0.96), rgba(34, 18, 28, 0.98));
+  --wc-emoji-bg: #432733;
+  --wc-emoji-panel: #28131d;
+  --wc-emoji-border: #331925;
+  --wc-emoji-hover: #563240;
+  --wc-emoji-accent: #ff8ab2;
+  --wc-accent: #ff8ab2;
+  --wc-accent-hover: #f06e9d;
+  --wc-accent-light: #ffc7d7;
+  --wc-accent-bg: rgba(255, 138, 178, 0.24);
+  --wc-accent-text: #fff0f5;
+  --wc-link: #ff9abd;
+  --wc-mention-bg: #5b2f40;
+  --wc-mention-text: #fff0f5;
+  --wc-mention-me-bg: #341622;
+  --wc-reply-highlight-bg: rgba(255, 138, 178, 0.11);
+  --wc-reply-target-bg: rgba(255, 138, 178, 0.16);
+  --wc-reaction-active-border: #ff8ab2;
+  --wc-reaction-active-bg: #5b2f40;
+  --wc-reaction-active-text: #fff0f5;
+  --wc-audio-icon-bg: #fff0f5;
+  --wc-audio-icon-fg: #ff8ab2;
+  --wc-audio-progress-bg: #ff8ab2;
+  --wc-highlight-ring: #ff8ab2;
+  --wc-highlight-bg: rgba(78, 38, 52, 0.18);
+  --wc-highlight-edge: var(--wc-accent-light);
+  --wc-settings-sidebar-bg: linear-gradient(180deg, rgba(45, 25, 36, 0.94), rgba(29, 15, 23, 0.98));
+  --wc-status-cutout: var(--wc-accent);
+}
+
+/* Forest - Green/nature themed */
+:root[data-windcord-theme="forest"] {
+  --wc-bg-top: #1a2a1a;
+  --wc-bg-bottom: #0f1a0f;
+  --wc-glow-a: rgba(100, 200, 100, 0.14);
+  --wc-glow-b: rgba(150, 220, 150, 0.08);
+  --wc-shell-top: #1e2e1e;
+  --wc-shell-bottom: #0f1a0f;
+  --wc-rail-top: rgba(12, 22, 12, 0.97);
+  --wc-rail-bottom: rgba(8, 15, 8, 0.99);
+  --wc-button-top: rgba(40, 65, 40, 0.92);
+  --wc-button-bottom: rgba(30, 50, 30, 0.94);
+  --wc-button-hover-top: rgba(50, 80, 50, 0.96);
+  --wc-button-hover-bottom: rgba(40, 65, 40, 0.96);
+  --wc-active-top: rgba(100, 200, 100, 0.92);
+  --wc-active-bottom: rgba(60, 140, 60, 0.94);
+  --wc-active-shadow: rgba(40, 100, 40, 0.34);
+  --wc-sidebar-top: rgba(20, 35, 20, 0.9);
+  --wc-sidebar-bottom: rgba(14, 25, 14, 0.96);
+  --wc-modal-glow: rgba(100, 200, 100, 0.08);
+  --wc-chat-glow: rgba(120, 210, 120, 0.05);
+  --wc-chat-top: rgba(30, 48, 30, 0.92);
+  --wc-chat-bottom: rgba(20, 32, 20, 0.98);
+  --wc-compose-top: rgba(55, 85, 55, 0.88);
+  --wc-compose-bottom: rgba(42, 65, 42, 0.94);
+  --wc-empty-glow: rgba(100, 200, 100, 0.1);
+  --wc-surface-tint: rgba(140, 220, 140, 0.08);
+  --wc-surface-tint-strong: rgba(140, 220, 140, 0.13);
+  --wc-focus-ring: rgba(100, 200, 100, 0.2);
+  --wc-card-surface: rgba(0, 0, 0, 0.22);
+  --wc-card-surface-strong: rgba(0, 0, 0, 0.28);
+  --wc-input-bg: rgba(5, 12, 5, 0.26);
+  --wc-input-border: rgba(180, 255, 180, 0.08);
+  --wc-profile-cutout: #1a2a1a;
+  --wc-member-panel-cutout: #142014;
+  --wc-member-panel-bg: linear-gradient(180deg, var(--wc-member-panel-cutout), rgba(14, 25, 14, 0.96));
+  --wc-userbar-cutout: #101a10;
+  --wc-userbar-bg: linear-gradient(180deg, rgba(20, 35, 20, 0.92), rgba(14, 25, 14, 0.98));
+  --wc-channel-active-bg: linear-gradient(180deg, rgba(100, 200, 100, 0.22), rgba(32, 64, 32, 0.24));
+  --wc-dm-active-bg: linear-gradient(180deg, rgba(100, 200, 100, 0.2), rgba(28, 55, 28, 0.22));
+  --wc-modal-bg: radial-gradient(circle at top left, var(--wc-modal-glow), transparent 22%), linear-gradient(180deg, rgba(30, 48, 30, 0.96), rgba(20, 32, 20, 0.98));
+  --wc-emoji-bg: #1e2e1e;
+  --wc-emoji-panel: #142014;
+  --wc-emoji-border: #1a2a1a;
+  --wc-emoji-hover: #283828;
+  --wc-emoji-accent: #64c864;
+  --wc-accent: #64c864;
+  --wc-accent-hover: #50b050;
+  --wc-accent-light: #90e090;
+  --wc-accent-bg: rgba(100, 200, 100, 0.22);
+  --wc-accent-text: #e0ffe0;
+  --wc-link: #64c864;
+  --wc-mention-bg: #204020;
+  --wc-mention-text: #e0ffe0;
+  --wc-mention-me-bg: #143114;
+  --wc-reply-highlight-bg: rgba(100, 200, 100, 0.1);
+  --wc-reply-target-bg: rgba(100, 200, 100, 0.15);
+  --wc-reaction-active-border: #64c864;
+  --wc-reaction-active-bg: #204020;
+  --wc-reaction-active-text: #e0ffe0;
+  --wc-audio-icon-bg: #e0ffe0;
+  --wc-audio-icon-fg: #64c864;
+  --wc-audio-progress-bg: #64c864;
+  --wc-highlight-ring: #64c864;
+  --wc-highlight-bg: rgba(30, 50, 30, 0.15);
+  --wc-highlight-edge: var(--wc-accent-light);
+  --wc-settings-sidebar-bg: linear-gradient(180deg, rgba(20, 35, 20, 0.94), rgba(14, 25, 14, 0.98));
+  --wc-status-cutout: var(--wc-accent);
+}
+
+/* Sunset - Warm orange/pink gradient */
+:root[data-windcord-theme="sunset"] {
+  --wc-bg-top: #442033;
+  --wc-bg-bottom: #241018;
+  --wc-glow-a: rgba(255, 138, 104, 0.16);
+  --wc-glow-b: rgba(255, 122, 164, 0.1);
+  --wc-shell-top: #4a2430;
+  --wc-shell-bottom: #26121a;
+  --wc-rail-top: rgba(40, 18, 26, 0.97);
+  --wc-rail-bottom: rgba(24, 10, 16, 0.99);
+  --wc-button-top: rgba(103, 54, 55, 0.92);
+  --wc-button-bottom: rgba(77, 37, 40, 0.95);
+  --wc-button-hover-top: rgba(124, 66, 68, 0.96);
+  --wc-button-hover-bottom: rgba(94, 45, 49, 0.96);
+  --wc-active-top: rgba(255, 143, 112, 0.94);
+  --wc-active-bottom: rgba(226, 104, 150, 0.95);
+  --wc-active-shadow: rgba(154, 63, 81, 0.36);
+  --wc-sidebar-top: rgba(58, 28, 38, 0.9);
+  --wc-sidebar-bottom: rgba(33, 14, 22, 0.96);
+  --wc-modal-glow: rgba(255, 143, 112, 0.09);
+  --wc-chat-glow: rgba(255, 165, 120, 0.06);
+  --wc-chat-top: rgba(68, 32, 44, 0.92);
+  --wc-chat-bottom: rgba(38, 18, 28, 0.98);
+  --wc-compose-top: rgba(116, 63, 68, 0.9);
+  --wc-compose-bottom: rgba(84, 42, 49, 0.95);
+  --wc-empty-glow: rgba(255, 143, 112, 0.11);
+  --wc-surface-tint: rgba(255, 178, 146, 0.1);
+  --wc-surface-tint-strong: rgba(255, 160, 188, 0.15);
+  --wc-focus-ring: rgba(255, 132, 146, 0.24);
+  --wc-card-surface: rgba(0, 0, 0, 0.22);
+  --wc-card-surface-strong: rgba(0, 0, 0, 0.28);
+  --wc-input-bg: rgba(20, 8, 12, 0.28);
+  --wc-input-border: rgba(255, 202, 186, 0.1);
+  --wc-profile-cutout: #381722;
+  --wc-member-panel-cutout: #2d141c;
+  --wc-member-panel-bg: linear-gradient(180deg, var(--wc-member-panel-cutout), rgba(33, 14, 22, 0.96));
+  --wc-userbar-cutout: #26111a;
+  --wc-userbar-bg: linear-gradient(180deg, rgba(68, 32, 44, 0.92), rgba(38, 18, 28, 0.98));
+  --wc-channel-active-bg: linear-gradient(180deg, rgba(255, 143, 112, 0.24), rgba(120, 48, 79, 0.26));
+  --wc-dm-active-bg: linear-gradient(180deg, rgba(255, 143, 112, 0.22), rgba(100, 41, 68, 0.24));
+  --wc-modal-bg: radial-gradient(circle at top left, var(--wc-modal-glow), transparent 24%), linear-gradient(180deg, rgba(68, 32, 44, 0.96), rgba(38, 18, 28, 0.98));
+  --wc-emoji-bg: #4a2430;
+  --wc-emoji-panel: #2b121a;
+  --wc-emoji-border: #371823;
+  --wc-emoji-hover: #5a2d3b;
+  --wc-emoji-accent: #ff977c;
+  --wc-accent: #ff977c;
+  --wc-accent-hover: #f27b94;
+  --wc-accent-light: #ffc4b3;
+  --wc-accent-bg: rgba(255, 151, 124, 0.24);
+  --wc-accent-text: #fff0f2;
+  --wc-link: #ffab98;
+  --wc-mention-bg: #5b2b39;
+  --wc-mention-text: #fff0f2;
+  --wc-mention-me-bg: #351521;
+  --wc-reply-highlight-bg: rgba(255, 143, 112, 0.11);
+  --wc-reply-target-bg: rgba(255, 143, 112, 0.16);
+  --wc-reaction-active-border: #ff977c;
+  --wc-reaction-active-bg: #5b2b39;
+  --wc-reaction-active-text: #fff0f2;
+  --wc-audio-icon-bg: #fff0f2;
+  --wc-audio-icon-fg: #ff977c;
+  --wc-audio-progress-bg: #ff977c;
+  --wc-highlight-ring: #ff977c;
+  --wc-highlight-bg: rgba(88, 39, 55, 0.18);
+  --wc-highlight-edge: var(--wc-accent-light);
+  --wc-settings-sidebar-bg: linear-gradient(180deg, rgba(58, 28, 38, 0.94), rgba(33, 14, 22, 0.98));
+  --wc-status-cutout: var(--wc-accent);
+}
+
+/* Lavender - Purple/lavender themed */
+:root[data-windcord-theme="lavender"] {
+  --wc-bg-top: #1e1a2a;
+  --wc-bg-bottom: #120f1a;
+  --wc-glow-a: rgba(160, 120, 255, 0.14);
+  --wc-glow-b: rgba(200, 160, 255, 0.08);
+  --wc-shell-top: #221e30;
+  --wc-shell-bottom: #120f1a;
+  --wc-rail-top: rgba(15, 12, 22, 0.97);
+  --wc-rail-bottom: rgba(10, 8, 15, 0.99);
+  --wc-button-top: rgba(45, 38, 65, 0.92);
+  --wc-button-bottom: rgba(35, 28, 50, 0.94);
+  --wc-button-hover-top: rgba(55, 48, 80, 0.96);
+  --wc-button-hover-bottom: rgba(45, 38, 65, 0.96);
+  --wc-active-top: rgba(160, 120, 255, 0.92);
+  --wc-active-bottom: rgba(110, 70, 200, 0.94);
+  --wc-active-shadow: rgba(80, 50, 150, 0.34);
+  --wc-sidebar-top: rgba(22, 18, 35, 0.9);
+  --wc-sidebar-bottom: rgba(15, 12, 25, 0.96);
+  --wc-modal-glow: rgba(160, 120, 255, 0.08);
+  --wc-chat-glow: rgba(180, 140, 255, 0.05);
+  --wc-chat-top: rgba(32, 28, 48, 0.92);
+  --wc-chat-bottom: rgba(22, 18, 32, 0.98);
+  --wc-compose-top: rgba(60, 52, 85, 0.88);
+  --wc-compose-bottom: rgba(48, 40, 68, 0.94);
+  --wc-empty-glow: rgba(160, 120, 255, 0.1);
+  --wc-surface-tint: rgba(180, 150, 255, 0.08);
+  --wc-surface-tint-strong: rgba(180, 150, 255, 0.13);
+  --wc-focus-ring: rgba(160, 120, 255, 0.2);
+  --wc-card-surface: rgba(0, 0, 0, 0.22);
+  --wc-card-surface-strong: rgba(0, 0, 0, 0.28);
+  --wc-input-bg: rgba(8, 5, 15, 0.26);
+  --wc-input-border: rgba(200, 170, 255, 0.08);
+  --wc-profile-cutout: #1e1a2a;
+  --wc-member-panel-cutout: #161220;
+  --wc-member-panel-bg: linear-gradient(180deg, var(--wc-member-panel-cutout), rgba(15, 12, 25, 0.96));
+  --wc-userbar-cutout: #120e1a;
+  --wc-userbar-bg: linear-gradient(180deg, rgba(22, 18, 35, 0.92), rgba(15, 12, 25, 0.98));
+  --wc-channel-active-bg: linear-gradient(180deg, rgba(160, 120, 255, 0.22), rgba(48, 32, 80, 0.24));
+  --wc-dm-active-bg: linear-gradient(180deg, rgba(160, 120, 255, 0.2), rgba(42, 28, 70, 0.22));
+  --wc-modal-bg: radial-gradient(circle at top left, var(--wc-modal-glow), transparent 22%), linear-gradient(180deg, rgba(32, 28, 48, 0.96), rgba(22, 18, 32, 0.98));
+  --wc-emoji-bg: #221e30;
+  --wc-emoji-panel: #161220;
+  --wc-emoji-border: #1e1a2a;
+  --wc-emoji-hover: #2a2540;
+  --wc-emoji-accent: #a078ff;
+  --wc-accent: #a078ff;
+  --wc-accent-hover: #8860e0;
+  --wc-accent-light: #c0a0ff;
+  --wc-accent-bg: rgba(160, 120, 255, 0.22);
+  --wc-accent-text: #e8d8ff;
+  --wc-link: #a078ff;
+  --wc-mention-bg: #302050;
+  --wc-mention-text: #e8d8ff;
+  --wc-mention-me-bg: #201438;
+  --wc-reply-highlight-bg: rgba(160, 120, 255, 0.1);
+  --wc-reply-target-bg: rgba(160, 120, 255, 0.15);
+  --wc-reaction-active-border: #a078ff;
+  --wc-reaction-active-bg: #302050;
+  --wc-reaction-active-text: #e8d8ff;
+  --wc-audio-icon-bg: #e8d8ff;
+  --wc-audio-icon-fg: #a078ff;
+  --wc-audio-progress-bg: #a078ff;
+  --wc-highlight-ring: #a078ff;
+  --wc-highlight-bg: rgba(40, 30, 60, 0.15);
+  --wc-highlight-edge: var(--wc-accent-light);
+  --wc-settings-sidebar-bg: linear-gradient(180deg, rgba(22, 18, 35, 0.94), rgba(15, 12, 25, 0.98));
+  --wc-status-cutout: var(--wc-accent);
 }
 
 body {
   margin: 0;
   font-family: "Noto Sans Variable", "Noto Sans", sans-serif;
   font-weight: 400;
-  background: #1e1f22;
+  background:
+    radial-gradient(circle at top left, var(--wc-glow-a), transparent 24%),
+    radial-gradient(circle at top right, var(--wc-glow-b), transparent 20%),
+    linear-gradient(180deg, var(--wc-bg-top) 0%, var(--wc-bg-bottom) 100%);
   color: #dbdee1;
   overflow: hidden;
   text-rendering: optimizeLegibility;
@@ -42,12 +701,33 @@ select {
 }
 
 html {
-  background: #1e1f22;
+  background: #121720;
 }
 
 ::selection {
-  background: rgba(88, 101, 242, 0.35);
+  background: color-mix(in srgb, var(--wc-active-top) 38%, transparent);
   color: #ffffff;
+}
+
+/* Message search jump highlight animation */
+@keyframes message-search-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--wc-highlight-ring);
+    background-color: var(--wc-highlight-bg);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--wc-highlight-ring) 30%, transparent);
+    background-color: color-mix(in srgb, var(--wc-highlight-bg) 80%, var(--wc-highlight-ring));
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: transparent;
+  }
+}
+
+.message-search-highlight {
+  animation: message-search-pulse 2s ease-out;
+  border-radius: 0.5rem;
 }
 
 .discord-scrollbar::-webkit-scrollbar {
@@ -55,17 +735,167 @@ html {
 }
 
 .discord-scrollbar::-webkit-scrollbar-thumb {
-  background: #1a1b1e;
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.discord-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+  background-clip: padding-box;
 }
 
 .discord-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  margin: 4px;
 }
 
 .message-markdown p {
   margin: 0;
   display: inline;
+}
+
+/* GitHub-style Markdown */
+.message-markdown {
+  word-break: break-word;
+}
+
+.message-markdown h1 {
+  margin-top: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.25;
+  display: block;
+}
+
+.message-markdown h2 {
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.25;
+  display: block;
+}
+
+.message-markdown h3 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.25;
+  display: block;
+}
+
+.message-markdown h4 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.25;
+  display: block;
+}
+
+.message-markdown h5 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.25;
+  display: block;
+}
+
+.message-markdown h6 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #949ba4;
+  line-height: 1.25;
+  display: block;
+}
+
+.message-markdown p {
+  margin: 0;
+  display: inline;
+}
+
+/* Ensure proper spacing between block elements */
+.message-markdown > * + * {
+  margin-top: 0.25rem;
+}
+
+.message-markdown > * + h1,
+.message-markdown > * + h2,
+.message-markdown > * + h3,
+.message-markdown > * + h4,
+.message-markdown > * + h5,
+.message-markdown > * + h6 {
+  margin-top: 0.75rem;
+}
+
+.message-markdown blockquote {
+  margin: 0.5rem 0;
+}
+
+.message-markdown blockquote > div {
+  line-height: 1.4;
+}
+
+.message-markdown code {
+  background: var(--wc-code-inline-bg);
+  border: 1px solid var(--wc-code-inline-border);
+  border-radius: 6px;
+  color: var(--wc-code-inline-text);
+  font-family: "Consolas", "Andale Mono WT", "Andale Mono", "Lucida Console", "Lucida Sans Typewriter", "DejaVu Sans Mono", "Bitstream Vera Sans Mono", "Liberation Mono", "Nimbus Mono L", "Monaco", "Courier New", Courier, monospace;
+  font-size: 0.875em;
+  padding: 0.12em 0.38em;
+}
+
+.message-markdown pre {
+  margin: 0.6rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--wc-code-block-border);
+  border-radius: 14px;
+  background: var(--wc-code-block-bg);
+  padding: 0.85rem 1rem;
+}
+
+.message-markdown pre code {
+  display: block;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.message-markdown table {
+  margin: 0.5rem 0;
+}
+
+.message-markdown ul,
+.message-markdown ol {
+  margin: 0.25rem 0;
+  padding: 0;
+}
+
+.message-markdown li {
+  line-height: 1.4;
+}
+
+.message-markdown li::marker {
+  color: #b9bbbe;
+}
+
+.message-markdown hr {
+  margin: 0.75rem 0;
 }
 
 .mention {
@@ -123,30 +953,39 @@ html {
   max-width: min(100%, 28rem);
 }
 
+/* Emoji picker outer container - solid opaque background, no blur, proper rounding */
 .discord-emoji-picker {
-  border: 1px solid #1f2125 !important;
-  border-radius: 12px !important;
-  background: #313338 !important;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.4) !important;
+  border: none !important;
+  border-radius: 22px !important;
+  background: var(--wc-emoji-bg) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Override wc-modal-card backdrop blur for emoji picker */
+.wc-modal-card.discord-emoji-picker {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .discord-emoji-picker.EmojiPickerReact {
-  --epr-bg-color: #313338;
-  --epr-picker-border-color: #1f2125;
-  --epr-hover-bg-color: #3b3d44;
-  --epr-text-color: #f2f3f5;
-  --epr-search-input-bg-color: #1e1f22;
-  --epr-search-input-bg-color-active: #1e1f22;
-  --epr-search-border-color: #1e1f22;
-  --epr-search-border-color-active: #5865f2;
-  --epr-search-input-text-color: #f2f3f5;
-  --epr-search-input-placeholder-color: #949ba4;
-  --epr-category-label-bg-color: #313338ee;
-  --epr-category-label-text-color: #b5bac1;
-  --epr-category-icon-active-color: #5865f2;
-  --epr-emoji-hover-color: #3a3c43;
-  --epr-preview-border-color: #232428;
-  --epr-emoji-variation-picker-bg-color: #232428;
+  --epr-bg-color: var(--wc-emoji-bg) !important;
+  --epr-picker-border-color: transparent !important;
+  --epr-hover-bg-color: var(--wc-emoji-hover) !important;
+  --epr-text-color: #f2f3f5 !important;
+  --epr-search-input-bg-color: rgba(0, 0, 0, 0.22) !important;
+  --epr-search-input-bg-color-active: rgba(0, 0, 0, 0.28) !important;
+  --epr-search-border-color: rgba(255, 255, 255, 0.06) !important;
+  --epr-search-border-color-active: var(--wc-emoji-accent) !important;
+  --epr-search-input-text-color: #f2f3f5 !important;
+  --epr-search-input-placeholder-color: #949ba4 !important;
+  --epr-category-label-bg-color: transparent !important;
+  --epr-category-label-text-color: #949ba4 !important;
+  --epr-category-icon-active-color: var(--wc-emoji-accent) !important;
+  --epr-emoji-hover-color: var(--wc-emoji-hover) !important;
+  --epr-preview-border-color: transparent !important;
+  --epr-emoji-variation-picker-bg-color: var(--wc-emoji-border) !important;
   --epr-horizontal-padding: 12px;
   --epr-search-input-height: 36px;
   --epr-search-input-border-radius: 8px;
@@ -162,6 +1001,10 @@ html {
 
 .discord-emoji-picker .epr-search-container input {
   font-size: 14px !important;
+  background-color: rgba(0, 0, 0, 0.22) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 8px !important;
+  color: #f2f3f5 !important;
 }
 
 .discord-emoji-picker .epr-search-container input::placeholder {
@@ -171,7 +1014,7 @@ html {
 .discord-emoji-picker .epr-category-nav {
   padding-top: 0 !important;
   padding-bottom: 10px !important;
-  border-bottom: 1px solid #232428;
+  border-bottom: 1px solid var(--wc-emoji-border);
 }
 
 .discord-emoji-picker .epr-category-nav button {
@@ -191,15 +1034,26 @@ html {
   background: transparent;
 }
 
+/* Category labels - transparent background, proper text color */
 .discord-emoji-picker .epr-emoji-category-label {
   font-size: 11px !important;
   font-weight: 700 !important;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  background-color: transparent !important;
+  color: #949ba4 !important;
+  padding-left: 4px !important;
 }
 
+/* Category content - transparent background */
 .discord-emoji-picker .epr-emoji-category-content {
   gap: 2px 0 !important;
+  background-color: transparent !important;
+}
+
+/* Individual category rows - transparent */
+.discord-emoji-picker .epr-emoji-category {
+  background-color: transparent !important;
 }
 
 .discord-emoji-picker .epr-emoji-img,
@@ -228,4 +1082,161 @@ html {
 .video-attachment-media:-ms-fullscreen {
   object-fit: contain !important;
   background: #2b2d31;
+}
+
+.wc-shell {
+  position: relative;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--wc-glow-a) 80%, transparent), transparent 26%),
+    radial-gradient(circle at 82% 0%, color-mix(in srgb, var(--wc-glow-b) 78%, transparent), transparent 18%),
+    linear-gradient(180deg, var(--wc-shell-top) 0%, var(--wc-shell-bottom) 100%);
+}
+
+.wc-rail {
+  background: linear-gradient(180deg, var(--wc-rail-top), var(--wc-rail-bottom));
+  border-right: 1px solid var(--wc-line);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+}
+
+.wc-rail-divider {
+  background: linear-gradient(90deg, transparent, rgba(171, 194, 255, 0.12), transparent);
+}
+
+.wc-rail-button {
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: linear-gradient(180deg, var(--wc-button-top), var(--wc-button-bottom));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02), 0 8px 18px rgba(0, 0, 0, 0.18);
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, border-radius 160ms ease;
+}
+
+.wc-rail-button:hover {
+  border-color: rgba(171, 194, 255, 0.14);
+  background: linear-gradient(180deg, var(--wc-button-hover-top), var(--wc-button-hover-bottom));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 12px 24px rgba(0, 0, 0, 0.24);
+  transform: translateY(-1px);
+}
+
+.wc-rail-button--active {
+  border-color: rgba(153, 178, 255, 0.22);
+  background: linear-gradient(180deg, var(--wc-active-top), var(--wc-active-bottom));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 28px var(--wc-active-shadow);
+}
+
+.wc-sidebar {
+  background: linear-gradient(180deg, var(--wc-sidebar-top), var(--wc-sidebar-bottom));
+  border-right: 1px solid var(--wc-line);
+  backdrop-filter: blur(18px);
+}
+
+.wc-sidebar-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+  border-bottom: 1px solid var(--wc-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+/* UserBar background - uses theme-aware variable instead of hardcoded blue gradient */
+.wc-userbar {
+  background: var(--wc-userbar-bg);
+  border-top: 1px solid var(--wc-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.wc-surface-card {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--wc-card-surface);
+  backdrop-filter: blur(14px);
+}
+
+.wc-surface-card-strong {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--wc-card-surface-strong);
+  backdrop-filter: blur(16px);
+}
+
+.wc-input-surface {
+  border: 1px solid var(--wc-input-border);
+  background: var(--wc-input-bg);
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.wc-input-surface:focus,
+.wc-input-surface:focus-visible {
+  border-color: color-mix(in srgb, var(--wc-active-top) 60%, transparent);
+  box-shadow: 0 0 0 3px var(--wc-focus-ring);
+  outline: none;
+}
+
+.wc-accent-button {
+  background: linear-gradient(180deg, var(--wc-active-top), var(--wc-active-bottom));
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.2);
+}
+
+.wc-accent-button:hover {
+  filter: brightness(1.06);
+}
+
+.wc-secondary-button {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.wc-secondary-button:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* Popover - uses theme-aware background variable */
+.wc-popover {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--wc-modal-bg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(16px);
+}
+
+/* Modal card - uses theme-aware background variable */
+.wc-modal-card {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--wc-modal-bg);
+  box-shadow: 0 32px 96px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(22px);
+}
+
+.wc-chat-surface {
+  background:
+    radial-gradient(circle at top center, var(--wc-chat-glow), transparent 20%),
+    linear-gradient(180deg, var(--wc-chat-top), var(--wc-chat-bottom));
+}
+
+.wc-chat-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01));
+  border-bottom: 1px solid var(--wc-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(14px);
+}
+
+.wc-compose-box {
+  border: 1px solid color-mix(in srgb, var(--wc-active-top) 20%, transparent);
+  background: linear-gradient(180deg, var(--wc-compose-top), var(--wc-compose-bottom));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 28px rgba(0, 0, 0, 0.16);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.wc-compose-box:focus-within {
+  border-color: color-mix(in srgb, var(--wc-active-top) 60%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 28px rgba(0, 0, 0, 0.16), 0 0 0 3px var(--wc-focus-ring);
+}
+
+.wc-empty-state {
+  border: 1px solid color-mix(in srgb, var(--wc-active-top) 16%, transparent);
+  background:
+    radial-gradient(circle at top, var(--wc-empty-glow), transparent 32%),
+    linear-gradient(180deg, rgba(26, 31, 43, 0.9), rgba(16, 20, 29, 0.94));
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(18px);
+}
+
+/* Safety net: explicitly remove any borders from member list items */
+.wc-member-list-item {
+  border: none !important;
+  outline: none !important;
 }

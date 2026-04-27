@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "../lib/prisma";
 import { logAdminEvent } from "../lib/adminAudit";
+import { hasPermission as hasMemberPermission } from "../lib/permissions";
 
 const prismaAny = prisma as any;
 
@@ -21,40 +22,29 @@ const deleteAttachmentIfLocal = (attachmentUrl?: string | null): void => {
   }
 };
 
-const getServerRoleForChannel = async (
-  channelId: string,
-  userId: string
-): Promise<{ ownerId: string; role: string | null } | null> => {
-  const channel = await prisma.channel.findUnique({
-    where: { id: channelId },
-    include: {
-      server: {
-        include: {
-          members: {
-            where: { userId },
-            select: { role: true }
-          }
-        }
-      }
-    }
+const canManageChannels = async (serverId: string, userId: string): Promise<boolean> => {
+  const server = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
+  if (!server) return false;
+
+  const member = await prismaAny.serverMember.findUnique({
+    where: { userId_serverId: { userId, serverId } }
   });
 
-  if (!channel) {
-    return null;
-  }
-
-  return {
-    ownerId: channel.server.ownerId,
-    role: channel.server.members[0]?.role ?? null
-  };
+  return hasMemberPermission(member, server.ownerId, userId, "manageChannels");
 };
 
-const canModerateChannel = async (channelId: string, userId: string): Promise<boolean> => {
-  const roleInfo = await getServerRoleForChannel(channelId, userId);
-  if (!roleInfo) {
-    return false;
-  }
-  return roleInfo.ownerId === userId || roleInfo.role === "ADMIN";
+const canManageMessages = async (channelId: string, userId: string): Promise<boolean> => {
+  const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
+  if (!channel) return false;
+
+  const server = await prisma.server.findUnique({ where: { id: channel.serverId }, select: { ownerId: true } });
+  if (!server) return false;
+
+  const member = await prismaAny.serverMember.findUnique({
+    where: { userId_serverId: { userId, serverId: channel.serverId } }
+  });
+
+  return hasMemberPermission(member, server.ownerId, userId, "manageMessages");
 };
 
 const messageDetailsInclude = {
@@ -87,10 +77,9 @@ export const createCategory = async (req: Request, res: Response): Promise<void>
   const { serverId } = req.params;
   const { name, order } = req.body as { name: string; order?: number };
 
-  const member = await prisma.serverMember.findUnique({ where: { userId_serverId: { userId: req.user!.id, serverId } } });
-  const server = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
-  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
-    res.status(403).json({ message: "Forbidden" });
+  const canManage = await canManageChannels(serverId, req.user!.id);
+  if (!canManage) {
+    res.status(403).json({ message: "You don't have permission to manage channels" });
     return;
   }
 
@@ -115,10 +104,9 @@ export const createChannel = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const member = await prisma.serverMember.findUnique({ where: { userId_serverId: { userId: req.user!.id, serverId } } });
-  const server = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
-  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
-    res.status(403).json({ message: "Forbidden" });
+  const canManage = await canManageChannels(serverId, req.user!.id);
+  if (!canManage) {
+    res.status(403).json({ message: "You don't have permission to manage channels" });
     return;
   }
 
@@ -157,30 +145,106 @@ export const createChannel = async (req: Request, res: Response): Promise<void> 
 };
 
 const MESSAGE_PAGE_SIZE = 50;
+const MESSAGE_CONTEXT_BEFORE_COUNT = 20;
+const MESSAGE_CONTEXT_AFTER_COUNT = MESSAGE_PAGE_SIZE - MESSAGE_CONTEXT_BEFORE_COUNT - 1;
 
 export const listMessages = async (req: Request, res: Response): Promise<void> => {
   const { channelId } = req.params;
   const before = typeof req.query.before === "string" ? req.query.before : undefined;
+  const after = typeof req.query.after === "string" ? req.query.after : undefined;
+
+  const beforeCreatedAt = before
+    ? (await prisma.message.findUnique({ where: { id: before }, select: { createdAt: true } }))?.createdAt
+    : undefined;
+  const afterCreatedAt = after
+    ? (await prisma.message.findUnique({ where: { id: after }, select: { createdAt: true } }))?.createdAt
+    : undefined;
 
   const messages = await prisma.message.findMany({
     where: {
       channelId,
-      ...(before ? { createdAt: { lt: (await prisma.message.findUnique({ where: { id: before }, select: { createdAt: true } }))?.createdAt } } : {})
+      ...(beforeCreatedAt ? { createdAt: { lt: beforeCreatedAt } } : {}),
+      ...(afterCreatedAt ? { createdAt: { gt: afterCreatedAt } } : {})
     },
     include: messageDetailsInclude,
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: afterCreatedAt ? "asc" : "desc" },
     take: MESSAGE_PAGE_SIZE
   });
 
-  // Reverse to ascending order for the client
-  const ordered = messages.reverse();
+  const ordered = afterCreatedAt ? messages : messages.reverse();
 
-  // Determine whether older messages exist
   const hasOlder = ordered.length > 0
     ? (await prisma.message.count({ where: { channelId, createdAt: { lt: ordered[0].createdAt } } })) > 0
     : false;
+  const hasNewer = ordered.length > 0
+    ? (await prisma.message.count({ where: { channelId, createdAt: { gt: ordered[ordered.length - 1].createdAt } } })) > 0
+    : false;
 
-  res.json({ messages: ordered, hasOlder });
+  res.json({ messages: ordered, hasOlder, hasNewer });
+};
+
+export const getMessageContext = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const { channelId, messageId } = req.params;
+
+  const targetMessage = await prismaAny.message.findUnique({
+    where: { id: messageId },
+    include: {
+      ...messageDetailsInclude,
+      channel: { select: { serverId: true } }
+    }
+  });
+
+  if (!targetMessage || targetMessage.channelId !== channelId) {
+    res.status(404).json({ message: "Message not found" });
+    return;
+  }
+
+  const server = await prisma.server.findUnique({ where: { id: targetMessage.channel.serverId }, select: { ownerId: true } });
+  const membership = await prisma.serverMember.findUnique({
+    where: {
+      userId_serverId: {
+        userId,
+        serverId: targetMessage.channel.serverId
+      }
+    },
+    select: { userId: true }
+  });
+
+  if (!server || (server.ownerId !== userId && !membership)) {
+    res.status(403).json({ message: "You do not have access to this channel" });
+    return;
+  }
+
+  const beforeMessages = await prisma.message.findMany({
+    where: {
+      channelId,
+      createdAt: { lt: targetMessage.createdAt }
+    },
+    include: messageDetailsInclude,
+    orderBy: { createdAt: "desc" },
+    take: MESSAGE_CONTEXT_BEFORE_COUNT
+  });
+
+  const afterMessages = await prisma.message.findMany({
+    where: {
+      channelId,
+      createdAt: { gt: targetMessage.createdAt }
+    },
+    include: messageDetailsInclude,
+    orderBy: { createdAt: "asc" },
+    take: MESSAGE_CONTEXT_AFTER_COUNT
+  });
+
+  const messages = [...beforeMessages.reverse(), targetMessage, ...afterMessages];
+  const hasOlder = messages.length > 0
+    ? (await prisma.message.count({ where: { channelId, createdAt: { lt: messages[0].createdAt } } })) > 0
+    : false;
+  const hasNewer = messages.length > 0
+    ? (await prisma.message.count({ where: { channelId, createdAt: { gt: messages[messages.length - 1].createdAt } } })) > 0
+    : false;
+
+  res.json({ messages, hasOlder, hasNewer, focusMessageId: targetMessage.id });
 };
 
 export const createMessage = async (req: Request, res: Response): Promise<void> => {
@@ -249,7 +313,7 @@ export const editMessage = async (req: Request, res: Response): Promise<void> =>
     return;
   }
 
-  const canModerate = await canModerateChannel(existing.channelId, userId);
+  const canModerate = await canManageMessages(existing.channelId, userId);
   if (existing.authorId !== userId && !canModerate) {
     res.status(403).json({ message: "Forbidden" });
     return;
@@ -276,7 +340,21 @@ export const deleteMessage = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const canModerate = await canModerateChannel(existing.channelId, userId);
+  // Fetch server to check if message author is the owner
+  const channel = await prisma.channel.findUnique({ where: { id: existing.channelId }, select: { serverId: true } });
+  if (!channel) {
+    res.status(404).json({ message: "Channel not found" });
+    return;
+  }
+  const server = await prisma.server.findUnique({ where: { id: channel.serverId }, select: { ownerId: true } });
+
+  // Non-owners cannot delete messages sent by the server owner
+  if (server && existing.authorId === server.ownerId && userId !== server.ownerId) {
+    res.status(403).json({ message: "You cannot delete the owner's messages" });
+    return;
+  }
+
+  const canModerate = await canManageMessages(existing.channelId, userId);
   if (existing.authorId !== userId && !canModerate) {
     res.status(403).json({ message: "Forbidden" });
     return;
@@ -287,7 +365,6 @@ export const deleteMessage = async (req: Request, res: Response): Promise<void> 
   deleteAttachmentIfLocal(attachmentUrl);
   const io = req.app.get("io");
   io.to(`channel:${existing.channelId}`).emit("message:deleted", { id: messageId });
-  const channel = await prisma.channel.findUnique({ where: { id: existing.channelId }, select: { serverId: true } });
   await logAdminEvent({
     type: "MESSAGE_ACTIVITY",
     summary: `Message count changed in channel ${existing.channelId}`,
@@ -352,7 +429,7 @@ export const togglePin = async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const canModerate = await canModerateChannel(message.channelId, userId);
+  const canModerate = await canManageMessages(message.channelId, userId);
   if (!canModerate) {
     res.status(403).json({ message: "Only server admins/owner can pin or unpin" });
     return;
@@ -385,12 +462,9 @@ export const deleteChannel = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const member = await prisma.serverMember.findUnique({
-    where: { userId_serverId: { userId: req.user!.id, serverId: channel.serverId } }
-  });
-  const server = await prisma.server.findUnique({ where: { id: channel.serverId }, select: { ownerId: true } });
-  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
-    res.status(403).json({ message: "Forbidden" });
+  const canManage = await canManageChannels(channel.serverId, req.user!.id);
+  if (!canManage) {
+    res.status(403).json({ message: "You don't have permission to manage channels" });
     return;
   }
 
@@ -416,12 +490,9 @@ export const deleteCategory = async (req: Request, res: Response): Promise<void>
     return;
   }
 
-  const member = await prisma.serverMember.findUnique({
-    where: { userId_serverId: { userId: req.user!.id, serverId: category.serverId } }
-  });
-  const server = await prisma.server.findUnique({ where: { id: category.serverId }, select: { ownerId: true } });
-  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
-    res.status(403).json({ message: "Forbidden" });
+  const canManage = await canManageChannels(category.serverId, req.user!.id);
+  if (!canManage) {
+    res.status(403).json({ message: "You don't have permission to manage channels" });
     return;
   }
 
@@ -446,12 +517,9 @@ export const updateCategory = async (req: Request, res: Response): Promise<void>
     return;
   }
 
-  const member = await prisma.serverMember.findUnique({
-    where: { userId_serverId: { userId: req.user!.id, serverId: category.serverId } }
-  });
-  const server = await prisma.server.findUnique({ where: { id: category.serverId }, select: { ownerId: true } });
-  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
-    res.status(403).json({ message: "Forbidden" });
+  const canManage = await canManageChannels(category.serverId, req.user!.id);
+  if (!canManage) {
+    res.status(403).json({ message: "You don't have permission to manage channels" });
     return;
   }
 
@@ -475,10 +543,9 @@ export const reorderCategories = async (req: Request, res: Response): Promise<vo
     return;
   }
 
-  const member = await prisma.serverMember.findUnique({ where: { userId_serverId: { userId: req.user!.id, serverId } } });
-  const server = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
-  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
-    res.status(403).json({ message: "Forbidden" });
+  const canManage = await canManageChannels(serverId, req.user!.id);
+  if (!canManage) {
+    res.status(403).json({ message: "You don't have permission to manage channels" });
     return;
   }
 
@@ -503,10 +570,9 @@ export const reorderChannels = async (req: Request, res: Response): Promise<void
     return;
   }
 
-  const member = await prisma.serverMember.findUnique({ where: { userId_serverId: { userId: req.user!.id, serverId } } });
-  const server = await prisma.server.findUnique({ where: { id: serverId }, select: { ownerId: true } });
-  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
-    res.status(403).json({ message: "Forbidden" });
+  const canManage = await canManageChannels(serverId, req.user!.id);
+  if (!canManage) {
+    res.status(403).json({ message: "You don't have permission to manage channels" });
     return;
   }
 
@@ -534,7 +600,7 @@ export const reorderChannels = async (req: Request, res: Response): Promise<void
 
 export const updateChannel = async (req: Request, res: Response): Promise<void> => {
   const { channelId } = req.params;
-  const { categoryId, name, readOnly } = req.body as { categoryId?: string | null; name?: string; readOnly?: boolean };
+  const { categoryId, name, readOnly, isAnnouncement } = req.body as { categoryId?: string | null; name?: string; readOnly?: boolean; isAnnouncement?: boolean };
 
   const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
   if (!channel) {
@@ -542,12 +608,9 @@ export const updateChannel = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const server = await prisma.server.findUnique({ where: { id: channel.serverId }, select: { ownerId: true } });
-  const member = await prisma.serverMember.findUnique({
-    where: { userId_serverId: { userId: req.user!.id, serverId: channel.serverId } }
-  });
-  if (!server || (server.ownerId !== req.user!.id && member?.role !== "ADMIN")) {
-    res.status(403).json({ message: "Forbidden" });
+  const canManage = await canManageChannels(channel.serverId, req.user!.id);
+  if (!canManage) {
+    res.status(403).json({ message: "You don't have permission to manage channels" });
     return;
   }
 
@@ -574,13 +637,16 @@ export const updateChannel = async (req: Request, res: Response): Promise<void> 
   }
 
   const hasCategoryId = Object.prototype.hasOwnProperty.call(req.body, "categoryId");
+  const hasReadOnly = Object.prototype.hasOwnProperty.call(req.body, "readOnly");
+  const hasAnnouncement = Object.prototype.hasOwnProperty.call(req.body, "isAnnouncement");
 
   const updated = await prisma.channel.update({
     where: { id: channelId },
     data: {
       ...(hasCategoryId ? { categoryId: categoryId ?? null } : {}),
       ...(normalizedName !== undefined ? { name: normalizedName } : {}),
-      ...(typeof readOnly === "boolean" ? { readOnly } : {})
+      ...(hasReadOnly ? { readOnly } : {}),
+      ...(hasAnnouncement ? { isAnnouncement } : {})
     }
   });
 
@@ -588,4 +654,44 @@ export const updateChannel = async (req: Request, res: Response): Promise<void> 
   io.emit("channel:updated", { channel: updated });
 
   res.json({ channel: updated });
+};
+
+export const searchMessages = async (req: Request, res: Response): Promise<void> => {
+  const { channelId } = req.params;
+  const { q, limit: limitStr } = req.query as { q: string; limit?: string };
+
+  if (!q || q.trim().length === 0) {
+    res.status(400).json({ message: "Search query is required" });
+    return;
+  }
+
+  const searchLimit = Math.min(parseInt(limitStr || '20', 10) || 20, 50);
+  const searchTerm = q.trim();
+
+  try {
+    // SQLite doesn't support mode: "insensitive", so we fetch all messages and filter client-side
+    const messages = await prismaAny.message.findMany({
+      where: {
+        channelId
+      },
+      include: messageDetailsInclude,
+      orderBy: { createdAt: "desc" },
+      take: searchLimit * 3 // Fetch more to account for filtering
+    });
+
+    // Filter client-side for case-insensitive match
+    const filtered = messages.filter((msg: any) =>
+      msg.content && msg.content.toLowerCase().includes(searchTerm.toLowerCase())
+    ).slice(0, searchLimit);
+
+    const results = filtered.map((msg: any) => ({
+      message: msg,
+      highlightedText: msg.content || ""
+    }));
+
+    res.json({ results, total: results.length });
+  } catch (error) {
+    console.error("Search error:", error);
+    res.status(500).json({ message: "Search failed" });
+  }
 };

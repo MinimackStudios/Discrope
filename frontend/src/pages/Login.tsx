@@ -47,6 +47,7 @@ const LoginPage = (): JSX.Element => {
   const [busy, setBusy] = useState(false);
   const isRecoveryHandoff = Boolean(recoveryCodeNotice && recoveryStep);
   const activeRecoveryCode = recoveryCodeNotice ?? "";
+  const authInputClass = "wc-input-surface mt-1 w-full rounded-2xl px-3 py-2 text-sm text-white";
 
   if (user && !isRecoveryHandoff) {
     return <Navigate to="/" replace />;
@@ -93,11 +94,11 @@ const LoginPage = (): JSX.Element => {
   };
 
   return (
-    <main className="grid h-screen place-items-center bg-gradient-to-b from-[#23262a] to-[#111214] px-4">
+    <main className="grid h-screen place-items-center px-4" style={{ background: "var(--wc-login-bg, var(--wc-bg-top))" }}>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md rounded-xl bg-[#313338] p-8 shadow-2xl"
+        className="wc-modal-card w-full max-w-md rounded-[28px] p-8"
       >
         <h1 className="mb-2 text-center text-2xl font-bold text-white">Welcome to Windcord</h1>
         <p className="mb-6 text-center text-sm text-discord-muted">
@@ -113,12 +114,12 @@ const LoginPage = (): JSX.Element => {
         </p>
 
         {isRecoveryHandoff ? (
-          <div className="rounded-lg border border-[#f0b232]/40 bg-[#2d2613] p-4 text-sm text-[#f8e7b2]">
+          <div className="rounded-2xl border border-[#f0b232]/40 bg-[rgba(45,38,19,0.72)] p-4 text-sm text-[#f8e7b2] backdrop-blur-sm">
             <p className="font-semibold text-white">Save this recovery key now.</p>
             <p className="mt-1 text-xs leading-5 text-[#e9d79a]">
               Windcord only shows this key once. You will need it if you ever forget your password.
             </p>
-            <div className="mt-3 rounded bg-[#111214] px-3 py-2 font-mono text-base tracking-[0.2em] text-white">
+            <div className="mt-3 rounded-xl border border-white/8 bg-[#111214] px-3 py-2 font-mono text-base tracking-[0.2em] text-white">
               {activeRecoveryCode}
             </div>
             <p className="mt-3 text-xs leading-5 text-[#f8e7b2]">
@@ -128,7 +129,7 @@ const LoginPage = (): JSX.Element => {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="rounded bg-[#3a3d45] px-3 py-2 text-xs font-semibold text-white hover:bg-[#4a4e59]"
+                  className="rounded-xl bg-white/[0.08] px-3 py-2 text-xs font-semibold text-white hover:bg-white/[0.12]"
                   onClick={() => {
                     void navigator.clipboard.writeText(activeRecoveryCode);
                     setRecoveryCodeHandled(true);
@@ -138,7 +139,7 @@ const LoginPage = (): JSX.Element => {
                 </button>
                 <button
                   type="button"
-                  className="rounded bg-discord-blurple px-3 py-2 text-xs font-semibold text-white hover:brightness-110"
+                  className="rounded-xl bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] px-3 py-2 text-xs font-semibold text-white hover:brightness-110"
                   onClick={() => {
                     downloadRecoveryKey(username, activeRecoveryCode);
                     setRecoveryCodeHandled(true);
@@ -179,7 +180,7 @@ const LoginPage = (): JSX.Element => {
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="mt-1 w-full rounded bg-[#1e1f22] px-3 py-2 text-sm text-white outline-none ring-1 ring-transparent focus:ring-discord-blurple"
+              className={authInputClass}
               required
               minLength={2}
               maxLength={32}
@@ -194,7 +195,7 @@ const LoginPage = (): JSX.Element => {
               <input
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
-                className="mt-1 w-full rounded bg-[#1e1f22] px-3 py-2 text-sm text-white outline-none ring-1 ring-transparent focus:ring-discord-blurple"
+                className={authInputClass}
                 required
                 minLength={1}
                 maxLength={32}
@@ -208,7 +209,7 @@ const LoginPage = (): JSX.Element => {
               <input
                 value={recoveryCode}
                 onChange={(e) => setRecoveryCode(e.target.value.toUpperCase())}
-                className="mt-1 w-full rounded bg-[#1e1f22] px-3 py-2 font-mono text-sm uppercase tracking-[0.18em] text-white outline-none ring-1 ring-transparent focus:ring-discord-blurple"
+                className={`${authInputClass} font-mono uppercase tracking-[0.18em]`}
                 required
                 minLength={8}
                 maxLength={64}
@@ -223,7 +224,7 @@ const LoginPage = (): JSX.Element => {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded bg-[#1e1f22] px-3 py-2 text-sm text-white outline-none ring-1 ring-transparent focus:ring-discord-blurple"
+              className={authInputClass}
               required
               minLength={mode === "login" ? 1 : 8}
             />
@@ -237,7 +238,7 @@ const LoginPage = (): JSX.Element => {
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="mt-1 w-full rounded bg-[#1e1f22] px-3 py-2 text-sm text-white outline-none ring-1 ring-transparent focus:ring-discord-blurple"
+                className={authInputClass}
                 required
                 minLength={8}
               />
@@ -250,7 +251,7 @@ const LoginPage = (): JSX.Element => {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded bg-discord-blurple py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
+            className="w-full rounded-2xl bg-[linear-gradient(180deg,var(--wc-active-top),var(--wc-active-bottom))] py-2.5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(0,0,0,0.2)] transition hover:brightness-110 disabled:opacity-60"
           >
             {busy ? "Please wait..." : mode === "login" ? "Login" : mode === "register" ? "Create Account" : "Reset Password"}
           </button>
@@ -258,7 +259,7 @@ const LoginPage = (): JSX.Element => {
 
         {!isRecoveryHandoff ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs">
           <button
-            className="text-[#00a8fc] hover:underline"
+            className="hover:underline" style={{ color: "var(--wc-link)" }}
             onClick={() => {
               setError(null);
               setSuccessMessage(null);

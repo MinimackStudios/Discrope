@@ -67,7 +67,7 @@ app.get("/uploads/attachments/:fileName", (req, res, next) => {
 });
 app.use("/uploads", express_1.default.static(node_path_1.default.resolve(process.cwd(), "uploads"), { maxAge: "7d" }));
 app.get("/health", (_req, res) => {
-    res.json({ ok: true, service: "diskchat-backend" });
+    res.json({ ok: true, service: "windcord-backend" });
 });
 app.use("/api/auth", authRoutes_1.default);
 app.use("/api/admin", adminRoutes_1.default);
@@ -82,5 +82,5 @@ app.use((err, _req, res, _next) => {
 const port = Number(process.env.PORT ?? 4000);
 server.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`DiskChat backend listening on http://localhost:${port}`);
+    console.log(`Windcord backend listening on http://localhost:${port}`);
 });

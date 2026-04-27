@@ -36,8 +36,10 @@ export const uploadBannerImage = buildUpload("banners");
 // Combined handler for PATCH /users/me — handles both avatar and bannerImage fields
 const bannersDir = path.join(uploadDir, "banners");
 const avatarsDir = path.join(uploadDir, "avatars");
+const serverIconsDir = path.join(uploadDir, "server-icons");
 ensureDir(bannersDir);
 ensureDir(avatarsDir);
+ensureDir(serverIconsDir);
 
 const userProfileStorage = multer.diskStorage({
   destination: (_req, file, cb) => {
@@ -53,3 +55,18 @@ export const uploadUserProfile = multer({
   storage: userProfileStorage,
   limits: { fileSize: 50 * 1024 * 1024 }
 }).fields([{ name: "avatar", maxCount: 1 }, { name: "bannerImage", maxCount: 1 }]);
+
+const serverAssetStorage = multer.diskStorage({
+  destination: (_req, file, cb) => {
+    cb(null, file.fieldname === "bannerImage" ? bannersDir : serverIconsDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${uuid()}${ext}`);
+  }
+});
+
+export const uploadServerAssets = multer({
+  storage: serverAssetStorage,
+  limits: { fileSize: 50 * 1024 * 1024 }
+}).fields([{ name: "icon", maxCount: 1 }, { name: "bannerImage", maxCount: 1 }]);

@@ -27,7 +27,7 @@ const SystemNoticeBanner = ({ notices, onDismiss }: Props): JSX.Element | null =
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="flex items-start gap-3 rounded-lg bg-[#1e1f22] p-3 shadow-2xl ring-1 ring-white/10 w-80"
+              className="flex items-start gap-3 rounded-lg bg-[#1e1f22] p-3 shadow-2xl ring-1 ring-white/[0.06] w-80"
             >
               <div className="mt-0.5 shrink-0 rounded-full bg-discord-blurple/20 p-1.5">
                 <Megaphone size={14} className="text-discord-blurple" />
@@ -91,7 +91,7 @@ const SystemNoticeBanner = ({ notices, onDismiss }: Props): JSX.Element | null =
                 <p className="whitespace-pre-wrap text-sm text-discord-text leading-relaxed">{expanded.body}</p>
               </div>
               {/* Footer */}
-              <div className="flex justify-end gap-2 border-t border-white/10 px-5 py-3">
+              <div className="flex justify-end gap-2 border-t border-white/[0.06] px-5 py-3">
                 <button
                   className="rounded bg-[#1e1f22] px-4 py-1.5 text-sm text-discord-muted hover:text-white"
                   onClick={() => setExpandedId(null)}

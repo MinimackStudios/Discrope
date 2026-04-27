@@ -67,7 +67,7 @@ const StatusPage = (): JSX.Element => {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md rounded-xl border border-white/10 bg-[#313338] p-6 shadow-2xl"
+        className="w-full max-w-md rounded-xl border border-white/[0.06] bg-[#313338] p-6 shadow-2xl"
       >
         <h1 className="text-2xl font-bold text-white">API Connection Lost</h1>
         <p className="mt-2 text-sm text-discord-muted">
