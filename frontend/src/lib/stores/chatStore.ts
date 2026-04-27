@@ -16,6 +16,14 @@ const LAST_SEEN_BY_CHANNEL_KEY = "windcord_last_seen_by_channel_v1";
 const LAST_SEEN_BY_DM_KEY = "windcord_last_seen_by_dm_v1";
 const NOTIFICATION_SOUND_DEFAULT_URL = `${import.meta.env.BASE_URL}notif.mp3`;
 const NOTIFICATION_SOUND_ALT_URL = `${import.meta.env.BASE_URL}notifalt.mp3`;
+const isHereMentionEligibleStatus = (status?: User["status"]): boolean => {
+  return status === "ONLINE" || status === "IDLE" || status === "DND";
+};
+
+const getNoticeTimestamp = (createdAt?: string): number => {
+  const parsed = Date.parse(createdAt ?? "");
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export const getNotifSoundPref = (): "default" | "alt" => {
   try {
@@ -410,8 +418,10 @@ type ChatState = {
   unreadDMs: Record<string, number>;
   hiddenDMIds: Record<string, boolean>;
   lastChannelByServer: Record<string, string>;
+  dismissedNoticeIds: Record<string, boolean>;
   notices: SystemNotice[];
   dismissNotice: (id: string) => void;
+  loadNotices: () => Promise<void>;
   lastUnreadMessageIdByChannel: Record<string, string>;
   channelOpenFocusMessageId: string | null;
   channelOpenFocusMode: "unread" | "search" | null;
@@ -465,6 +475,29 @@ export type SystemNotice = {
   id: string;
   title: string;
   body: string;
+  createdAt: string;
+};
+
+const mergeSystemNotices = (
+  current: SystemNotice[],
+  incoming: SystemNotice[],
+  dismissedNoticeIds: Record<string, boolean>
+): SystemNotice[] => {
+  const merged = new Map<string, SystemNotice>();
+
+  for (const notice of current) {
+    if (!dismissedNoticeIds[notice.id]) {
+      merged.set(notice.id, notice);
+    }
+  }
+
+  for (const notice of incoming) {
+    if (!dismissedNoticeIds[notice.id]) {
+      merged.set(notice.id, notice);
+    }
+  }
+
+  return Array.from(merged.values()).sort((left, right) => getNoticeTimestamp(left.createdAt) - getNoticeTimestamp(right.createdAt));
 };
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -478,8 +511,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
   dmMessages: [],
   dms: [],
   friends: [],
+  dismissedNoticeIds: {},
   notices: [],
-  dismissNotice: (id) => set((s) => ({ notices: s.notices.filter((n) => n.id !== id) })),
+  dismissNotice: (id) => {
+    set((state) => ({
+      dismissedNoticeIds: {
+        ...state.dismissedNoticeIds,
+        [id]: true
+      },
+      notices: state.notices.filter((notice) => notice.id !== id)
+    }));
+
+    void api.post(`/users/me/notices/${id}/dismiss`).catch(() => {
+      set((state) => {
+        const nextDismissedNoticeIds = { ...state.dismissedNoticeIds };
+        delete nextDismissedNoticeIds[id];
+        return { dismissedNoticeIds: nextDismissedNoticeIds };
+      });
+      void get().loadNotices();
+    });
+  },
   pendingFriends: [],
   outgoingPendingFriends: [],
   typingByChannel: {},
@@ -499,6 +550,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   hasNewerDMMessages: false,
   loadingOlderMessages: false,
   loadingNewerMessages: false,
+  loadNotices: async () => {
+    const { data } = await api.get("/users/me/notices");
+    const notices = Array.isArray(data.notices) ? (data.notices as SystemNotice[]) : [];
+
+    set((state) => ({
+      notices: mergeSystemNotices(state.notices, notices, state.dismissedNoticeIds)
+    }));
+  },
   loadServers: async () => {
     const socket = getSocket();
     const previousServer = get().servers.find((s) => s.id === get().activeServerId);
@@ -1415,6 +1474,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (isReconnect) {
         const activeChannelId = get().activeChannelId;
         const currentMode = get().mode;
+        void get().loadNotices();
         // Only reload channel messages when the user is actually viewing the
         // server. In DM mode activeChannelId still points at the last visited
         // server channel (needed for room joins above), so calling loadMessages
@@ -1493,9 +1553,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        // Count @everyone and @here mentions
+        // Count @everyone and only count @here when the current user is present.
         const everyoneMentions = (message.content.match(/@everyone/g) || []).length;
-        const hereMentions = (message.content.match(/@here/g) || []).length;
+        const hereMentions = currentUser && isHereMentionEligibleStatus(currentUser.status)
+          ? (message.content.match(/@here/g) || []).length
+          : 0;
         mentionCount += everyoneMentions + hereMentions;
 
         // Count reply mentions (replying to the current user)
@@ -1951,9 +2013,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
     });
 
-    socket.on("notice:broadcast", (notice: { title: string; body: string }) => {
-      set((s) => ({
-        notices: [...s.notices, { id: `${Date.now()}-${Math.random()}`, title: notice.title, body: notice.body }]
+    socket.on("notice:broadcast", (notice: SystemNotice) => {
+      set((state) => ({
+        notices: mergeSystemNotices(state.notices, [notice], state.dismissedNoticeIds)
       }));
     });
 

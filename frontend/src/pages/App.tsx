@@ -56,6 +56,7 @@ const MainPage = (): JSX.Element => {
     loadServers,
     loadFriends,
     loadDMs,
+    loadNotices,
     setActiveServer,
     setActiveChannel,
     openChannelMessage,
@@ -214,10 +215,10 @@ const MainPage = (): JSX.Element => {
 
   useEffect(() => {
     void (async () => {
-      await Promise.all([loadServers(), loadFriends(), loadDMs()]);
+      await Promise.all([loadServers(), loadFriends(), loadDMs(), loadNotices()]);
       void refreshOfflineUnreads();
     })();
-  }, [loadServers, loadFriends, loadDMs, refreshOfflineUnreads]);
+  }, [loadServers, loadFriends, loadDMs, loadNotices, refreshOfflineUnreads]);
 
   useEffect(() => {
     bindSocketEvents(user);

@@ -53,8 +53,15 @@ const broadcastNotice = async (req, res) => {
         res.status(400).json({ message: "title and body are required" });
         return;
     }
+    const notice = await prismaAny.broadcastNotice.create({
+        data: { title, body },
+        select: { id: true, title: true, body: true, createdAt: true }
+    });
     const io = req.app.get("io");
-    io.emit("notice:broadcast", { title, body });
+    io.emit("notice:broadcast", {
+        ...notice,
+        createdAt: notice.createdAt.toISOString()
+    });
     await (0, adminAudit_1.logAdminEvent)({
         type: "NOTICE_BROADCAST",
         summary: `Admin broadcast notice: "${title}"`,

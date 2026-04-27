@@ -10,6 +10,8 @@ const router = (0, express_1.Router)();
 router.use(auth_1.authMiddleware);
 router.get("/search", userController_1.findUsers);
 router.get("/friends", userController_1.listFriends);
+router.get("/me/notices", userController_1.listSystemNotices);
+router.post("/me/notices/:noticeId/dismiss", userController_1.dismissSystemNotice);
 router.post("/friends/request", (0, express_validator_1.body)("username").trim().matches(/^[a-z0-9]{2,32}$/), validate_1.validateRequest, userController_1.sendFriendRequest);
 router.post("/friends/accept/:requestId", userController_1.acceptFriendRequest);
 router.post("/friends/reject/:requestId", userController_1.rejectFriendRequest);
